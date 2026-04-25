@@ -3,55 +3,67 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
-# Configuração da página para ocupar a tela toda (bom para PC)
-st.set_page_config(layout="wide", page_title="ExpedFlow - Painel de Controle")
+# Função para garantir que o banco e a tabela existam
+def init_db():
+    conn = sqlite3.connect('expedicao.db', check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pedidos (
+            id_nota TEXT PRIMARY KEY,
+            vendedor TEXT,
+            endereco TEXT,
+            status TEXT DEFAULT 'PENDENTE',
+            alerta_critico INTEGER DEFAULT 0,
+            ultima_atualizacao DATETIME
+        )
+    ''')
+    conn.commit()
+    return conn
 
-def carregar_dados():
-    conn = sqlite3.connect('expedicao.db')
-    df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
-    conn.close()
-    return df
+# Inicializa o banco
+conn = init_db()
 
-st.title("🚀 ExpedFlow: Gestão de Notas e Logística")
+st.set_page_config(layout="wide", page_title="ExpedFlow")
+st.title("🚀 ExpedFlow: Gestão de Notas")
 
-# Barra Lateral com Filtros
-st.sidebar.header("Filtros Rápidos")
-busca = st.sidebar.text_input("🔍 Buscar Nota ou Cliente")
-filtro_alerta = st.sidebar.checkbox("Mostrar apenas ALERTAS CRÍTICOS")
+# Formulário lateral para entrada manual (enquanto não ligamos o Zap)
+st.sidebar.header("➕ Novo Pedido")
+with st.sidebar.form("novo_pedido"):
+    nota = st.text_input("Número da Nota")
+    vend = st.text_input("Vendedor")
+    end = st.text_area("Endereço/Observações")
+    submit = st.form_submit_button("Cadastrar")
+    
+    if submit and nota:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, status, ultima_atualizacao) VALUES (?, ?, ?, ?, ?)",
+                       (nota, vend, end, 'PENDENTE', datetime.now()))
+        conn.commit()
+        st.success(f"Nota {nota} salva!")
+        st.rerun()
 
-# Carregar os dados do banco
-df = carregar_dados()
+# Carregar dados para exibir
+df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
 
-if busca:
-    df = df[df['id_nota'].str.contains(busca) | df['endereco'].str.contains(busca)]
-
-if filtro_alerta:
-    df = df[df['alerta_critico'] == 1]
-
-# Layout em Colunas (Kanban)
-col1, col2, col3 = st.columns(3)
+# Organização em colunas
+col1, col2 = st.columns(2)
 
 with col1:
-    st.header("📥 Entrada / Triagem")
-    notas_pendentes = df[df['status'] == 'PENDENTE']
-    for _, nota in notas_pendentes.iterrows():
-        cor = "red" if nota['alerta_critico'] == 1 else "white"
+    st.header("📥 Notas Pendentes")
+    pendentes = df[df['status'] == 'PENDENTE']
+    if pendentes.empty:
+        st.write("Nenhuma nota pendente.")
+    for _, row in pendentes.iterrows():
         with st.container(border=True):
-            if nota['alerta_critico'] == 1:
-                st.error(f"⚠️ MUDANÇA: Nota {nota['id_nota']}")
-            else:
-                st.subheader(f"Nota: {nota['id_nota']}")
-            
-            st.write(f"**Vendedor:** {nota['vendedor']}")
-            st.write(f"**Info/Endereço:** {nota['endereco']}")
-            if st.button(f"Faturar {nota['id_nota']}", key=f"fat_{nota['id_nota']}"):
-                # Lógica para mudar status no banco aqui
-                pass
+            st.subheader(f"Nota: {row['id_nota']}")
+            st.write(f"**Vendedor:** {row['vendedor']}")
+            st.info(f"**Info:** {row['endereco']}")
+            if st.button(f"Concluir {row['id_nota']}", key=row['id_nota']):
+                conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
+                conn.commit()
+                st.rerun()
 
 with col2:
-    st.header("⚙️ Em Faturamento")
-    # Aqui apareceriam as notas que você está emitindo agora
-
-with col3:
-    st.header("🚚 Pronto p/ Carga")
-    # Aqui o pessoal do pátio olharia pelo celular
+    st.header("✅ Concluídas (Carga)")
+    concluidas = df[df['status'] == 'CONCLUIDO']
+    st.dataframe(concluidas[['id_nota', 'vendedor', 'ultima_atualizacao']], use_container_width=True)
