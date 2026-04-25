@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
+import io
 
 # --- 1. CONFIGURAÇÃO DE ALTO NÍVEL ---
 st.set_page_config(
@@ -10,85 +11,95 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. MOTOR DE DADOS (BANCO DE DADOS ROBUSTO) ---
+# --- 2. MOTOR DE DADOS (ESTRUTURA FINAL) ---
 def init_db():
-    conn = sqlite3.connect('expedflow_final.db', check_same_thread=False)
+    conn = sqlite3.connect('expedflow_v18_final.db', check_same_thread=False)
     cursor = conn.cursor()
-    # Tabela principal com suporte a anexo (blob)
     cursor.execute('''CREATE TABLE IF NOT EXISTS fluxo (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pdv TEXT, 
-        loja TEXT, 
-        tipo TEXT, 
-        detalhes TEXT, 
-        anexo BLOB,
-        status TEXT DEFAULT 'Pendente', 
-        data TEXT, 
-        usuario TEXT)''')
-    # Tabela de usuários
+        pdv TEXT, loja TEXT, tipo TEXT, detalhes TEXT, 
+        anexo BLOB, status TEXT DEFAULT 'Pendente', data TEXT, usuario TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-        username TEXT PRIMARY KEY, 
-        password TEXT, 
-        nome TEXT, 
-        perfil TEXT)''')
-    # Usuário Admin Padrão
+        username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT)''')
+    # Usuário Mestre
     cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Marcos Admin', 'Administrador')")
-    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('ira', '123', 'Irã', 'Visitante')")
     conn.commit()
     return conn
 
 db_conn = init_db()
 
-# --- 3. CSS DE ALTO CONTRASTE (TRAVA VISUAL) ---
+# --- 3. CSS DESIGN SYSTEM (MARKDOWN + TABELA + VISIBILIDADE) ---
 st.markdown("""
     <style>
-    /* Forçar tema claro e texto preto absoluto */
+    /* Reset de Fundo e Texto */
     .stApp { background-color: #FFFFFF !important; }
-    h1, h2, h3, p, span, label, b, strong, th, td, .stMarkdown {
+    
+    /* Estilização de Títulos e Textos Markdown */
+    h1 {
+        color: #0F172A !important;
+        font-size: 2rem !important;
+        font-weight: 800 !important;
+        border-bottom: 3px solid #0F172A;
+        padding-bottom: 5px;
+    }
+    
+    strong, b, label {
         color: #000000 !important;
         font-weight: 700 !important;
     }
-    
-    /* Estilização da Tabela */
-    .stTable { background-color: white !important; }
-    
-    /* Badge de Status */
-    .badge {
-        padding: 4px 10px;
-        border-radius: 15px;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    .badge-pendente { background-color: #FFEB3B; color: #000 !important; }
-    .badge-concluido { background-color: #4CAF50; color: #FFF !important; }
 
-    /* Inputs com borda preta */
-    .stTextInput input, .stSelectbox select, .stTextArea textarea {
-        border: 2px solid #000000 !important;
+    /* Layout de Tabela Industrial */
+    .header-table {
+        background-color: #0F172A;
+        color: white;
+        padding: 12px;
+        border-radius: 5px 5px 0 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.5fr 1fr 2fr 1.5fr;
+        font-weight: bold;
+        font-size: 0.9rem;
+    }
+
+    .row-table {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.5fr 1fr 2fr 1.5fr;
+        padding: 10px;
+        border-bottom: 1px solid #E2E8F0;
+        align-items: center;
+        background: white;
+    }
+
+    /* Badges de Status */
+    .status-pill {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
     }
 
     /* Sidebar Dark */
     section[data-testid="stSidebar"] { background-color: #0F172A !important; }
     section[data-testid="stSidebar"] * { color: #FFFFFF !important; }
 
-    /* Botão de Ação */
+    /* Botões */
     .stButton>button {
         background-color: #000000 !important;
         color: #FFFFFF !important;
+        font-weight: bold !important;
         border-radius: 5px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. SEGURANÇA E SESSÃO ---
-if "auth" not in st.session_state:
-    st.session_state["auth"] = False
+# --- 4. SEGURANÇA ---
+if "auth" not in st.session_state: st.session_state["auth"] = False
 
 if not st.session_state["auth"]:
-    _, col, _ = st.columns([1, 1.5, 1])
+    _, col, _ = st.columns([1, 1.2, 1])
     with col:
-        st.markdown("<h1 style='text-align:center;'>EXPEDFLOW PRO</h1>", unsafe_allow_html=True)
-        with st.form("login_final"):
+        st.markdown("# ACESSO EXPEDFLOW")
+        with st.form("login"):
             u = st.text_input("Usuário")
             p = st.text_input("Senha", type="password")
             if st.form_submit_button("ENTRAR", use_container_width=True):
@@ -96,112 +107,109 @@ if not st.session_state["auth"]:
                 if res:
                     st.session_state.update({"auth": True, "user_name": res[0], "user_perfil": res[1]})
                     st.rerun()
-                else: st.error("Acesso negado.")
+                else: st.error("Erro de login.")
     st.stop()
 
 # --- 5. NAVEGAÇÃO ---
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state['user_name']}")
-    st.markdown(f"Acesso: {st.session_state['user_perfil']}")
+    st.markdown(f"## {st.session_state['user_name']}")
+    st.markdown(f"*{st.session_state['user_perfil']}*")
     st.divider()
-    menu = st.radio("MENU", ["📋 PAINEL DE CARGA", "📥 REGISTRAR MOVIMENTAÇÃO", "👥 EQUIPE"])
-    if st.button("SAIR DO SISTEMA"):
+    menu = st.radio("MENU", ["📋 Painel de Carga", "📥 Novo Registro", "👥 Equipe"])
+    if st.button("SAIR"):
         st.session_state["auth"] = False
         st.rerun()
 
-# --- 6. PAINEL DE CARGA (LAYOUT DE TABELA INDUSTRIAL) ---
-if menu == "📋 PAINEL DE CARGA":
-    st.title("Controle de Produção")
+# --- 6. PAINEL DE CARGA (O LAYOUT SOLICITADO) ---
+if menu == "📋 Painel de Carga":
+    st.markdown("# Controle de Produção")
     
-    # Filtro rápido
-    busca = st.text_input("🔍 Buscar PDV...")
-    
-    # Cabeçalho da Tabela (Em colunas)
+    col_f, _ = st.columns([2, 3])
+    busca = col_f.text_input("🔍 Buscar PDV...")
+
+    # Cabeçalho Estilizado
     st.markdown("""
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 2fr 1.5fr; background: #000; color: #fff; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-            <div><b>PDV</b></div>
-            <div><b>LOJA</b></div>
-            <div><b>STATUS</b></div>
-            <div><b>TIPO</b></div>
-            <div><b>OBSERVAÇÃO</b></div>
-            <div style="text-align: right;"><b>AÇÕES</b></div>
+        <div class="header-table">
+            <div>PDV</div>
+            <div>LOJA</div>
+            <div>STATUS</div>
+            <div>RETIRADA</div>
+            <div>DETALHES</div>
+            <div style="text-align: right;">AÇÕES</div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Dados
     df = pd.read_sql_query("SELECT * FROM fluxo ORDER BY id DESC", db_conn)
-    if busca:
-        df = df[df['pdv'].str.contains(busca, case=False)]
+    if busca: df = df[df['pdv'].str.contains(busca, case=False)]
 
     for i, r in df.iterrows():
-        col_pdv, col_loja, col_status, col_tipo, col_obs, col_acoes = st.columns([1, 1, 1, 1, 2, 1.5])
+        c_pdv, c_loja, c_status, c_tipo, c_obs, c_btn = st.columns([1, 1, 1.5, 1, 2, 1.5])
         
-        col_pdv.markdown(f"**{r['pdv']}**")
-        col_loja.write(r['loja'])
+        c_pdv.markdown(f"**{r['pdv']}**")
+        c_loja.write(r['loja'])
         
         # Badge de Status
-        st_color = "#FFEB3B" if r['status'] == 'Pendente' else "#4CAF50"
-        st_txt = "#000" if r['status'] == 'Pendente' else "#FFF"
-        col_status.markdown(f'<span style="background:{st_color}; color:{st_txt}; padding:3px 8px; border-radius:10px; font-size:11px;">{r["status"]}</span>', unsafe_allow_html=True)
+        cor_fundo = "#FEF9C3" if r['status'] == 'Pendente' else "#DCFCE7"
+        cor_texto = "#854D0E" if r['status'] == 'Pendente' else "#166534"
+        c_status.markdown(f'<span class="status-pill" style="background:{cor_fundo}; color:{cor_texto};">{r["status"]}</span>', unsafe_allow_html=True)
         
-        col_tipo.write(r['tipo'])
-        col_obs.write(r['detalhes'][:30] + "..." if r['detalhes'] else "-")
+        c_tipo.write(r['tipo'])
         
-        # Ações na direita
-        if st.session_state['user_perfil'] != "Visitante":
-            if r['status'] == 'Pendente':
-                if col_acoes.button("✅ FINALIZAR", key=f"btn_{r['id']}", use_container_width=True):
-                    db_conn.cursor().execute("UPDATE fluxo SET status='Concluído' WHERE id=?", (r['id'],))
-                    db_conn.commit()
-                    st.rerun()
-            else:
-                col_acoes.markdown('<p style="text-align:right; color:green;">OK</p>', unsafe_allow_html=True)
-            
-            # Se tiver anexo, mostra ícone embaixo
+        # Seção de detalhes + anexo
+        with c_obs:
+            st.write(r['detalhes'] if r['detalhes'] else "-")
             if r['anexo']:
-                with col_obs.expander("🖼️ Ver Print"):
+                with st.expander("📁 Ver Print"):
                     st.image(r['anexo'])
-        
-        st.markdown("<hr style='margin:5px 0;'>", unsafe_allow_html=True)
 
-# --- 7. REGISTRAR MOVIMENTAÇÃO (COM ANEXO) ---
-elif menu == "📥 REGISTRAR MOVIMENTAÇÃO":
-    st.title("Lançar Ocorrência")
+        # Botão de Ação na Direita
+        if r['status'] == 'Pendente' and st.session_state['user_perfil'] != "Visitante":
+            if c_btn.button("FINALIZAR", key=f"f_{r['id']}", use_container_width=True):
+                db_conn.cursor().execute("UPDATE fluxo SET status='Concluído' WHERE id=?", (r['id'],))
+                db_conn.commit()
+                st.rerun()
+        else:
+            c_btn.markdown('<p style="text-align:right; color:#166534; font-size:12px;">CONCLUÍDO</p>', unsafe_allow_html=True)
+        
+        st.markdown("<hr style='margin:5px 0; opacity:0.2;'>", unsafe_allow_html=True)
+
+# --- 7. NOVO REGISTRO ---
+elif menu == "📥 Novo Registro":
+    st.markdown("# Nova Movimentação")
     if st.session_state['user_perfil'] == "Visitante":
-        st.warning("Acesso apenas para leitura.")
+        st.warning("Seu perfil permite apenas visualização.")
     else:
-        with st.form("registro_pro", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            f_pdv = c1.text_input("NÚMERO DO PDV")
-            f_loja = c2.selectbox("LOJA", ["Luziânia", "Jardim Ingá", "Indústria", "Outra"])
-            f_tipo = st.selectbox("OCORRÊNCIA", ["Retirado na Indústria", "Retirada na Loja", "Cancelamento/Devolução"])
-            f_det = st.text_area("DETALHES")
-            f_anexo = st.file_uploader("ANEXAR PRINT/FOTO", type=['png', 'jpg', 'jpeg'])
+        with st.form("reg_final", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            f_pdv = col1.text_input("Número do PDV")
+            f_loja = col2.selectbox("Loja Destino", ["Luziânia", "Jardim Ingá", "Indústria", "Outra"])
+            f_tipo = st.selectbox("Tipo de Ocorrência", ["Retirado na Indústria", "Retirada na Loja", "Cancelamento/Devolução"])
+            f_det = st.text_area("Observações Adicionais")
+            f_anexo = st.file_uploader("Anexar Print/Documento", type=['png', 'jpg', 'jpeg'])
             
-            if st.form_submit_button("LANÇAR NO PAINEL", use_container_width=True):
+            if st.form_submit_button("LANÇAR NO SISTEMA", use_container_width=True):
                 if f_pdv:
                     blob = f_anexo.read() if f_anexo else None
-                    agora = datetime.now().strftime("%d/%m %H:%M")
+                    dt = datetime.now().strftime("%d/%m %H:%M")
                     db_conn.cursor().execute("INSERT INTO fluxo (pdv, loja, tipo, detalhes, anexo, data, usuario) VALUES (?,?,?,?,?,?,?)",
-                                           (f_pdv, f_loja, f_tipo, f_det, blob, agora, st.session_state['user_name']))
+                                           (f_pdv, f_loja, f_tipo, f_det, blob, dt, st.session_state['user_name']))
                     db_conn.commit()
-                    st.success("Registrado!")
-                    st.rerun()
+                    st.success("Lançamento concluído!")
                 else:
                     st.error("PDV é obrigatório.")
 
 # --- 8. EQUIPE ---
-elif menu == "👥 EQUIPE":
+elif menu == "👥 Equipe":
     if st.session_state['user_perfil'] != "Administrador":
         st.error("Acesso restrito.")
     else:
-        st.title("Gestão de Usuários")
-        with st.form("add_equipe"):
-            u = st.text_input("Login")
-            n = st.text_input("Nome")
-            s = st.text_input("Senha")
-            p = st.selectbox("Perfil", ["Administrador", "Moderador", "Loja", "Visitante"])
-            if st.form_submit_button("SALVAR"):
-                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", (u, s, n, p))
+        st.markdown("# Gestão de Usuários")
+        with st.form("add_user"):
+            u_l = st.text_input("Login")
+            u_n = st.text_input("Nome Completo")
+            u_s = st.text_input("Senha")
+            u_p = st.selectbox("Perfil", ["Administrador", "Moderador", "Loja", "Visitante"])
+            if st.form_submit_button("CADASTRAR"):
+                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", (u_l, u_s, u_n, u_p))
                 db_conn.commit()
-                st.success("Usuário salvo!")
+                st.success("Usuário atualizado.")
