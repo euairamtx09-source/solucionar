@@ -26,8 +26,8 @@ def init_db():
 
 conn = init_db()
 
-# --- CSS E JAVASCRIPT PARA CTRL+V ---
-# Este script injeta uma lógica que escuta o evento de 'paste' (colar) no navegador
+# --- JAVASCRIPT PARA CAPTURAR CTRL+V ---
+# Este script escuta o evento de 'paste' e injeta a imagem no chat_input invisível
 st.markdown("""
     <script>
     const doc = window.parent.document;
@@ -39,6 +39,7 @@ st.markdown("""
                 const reader = new FileReader();
                 reader.onload = function(event) {
                     const base64String = event.target.result;
+                    // Envia a string da imagem para o Streamlit
                     window.parent.postMessage({
                         type: 'streamlit:set_component_value',
                         value: base64String
@@ -49,12 +50,18 @@ st.markdown("""
         }
     });
     </script>
+    """, unsafe_allow_html=True)
+
+# --- CSS DE ALTO CONTRASTE ---
+st.markdown("""
     <style>
     .stApp { background-color: #F3F4F6 !important; }
+    h1, h2, h3, p, label { color: #111827 !important; font-weight: 700 !important; }
     .pedido-card {
         background-color: #FFFFFF !important;
         padding: 15px;
         border-radius: 10px;
+        border: 2px solid #E5E7EB;
         border-left: 12px solid #059669 !important;
         margin-bottom: 20px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -62,59 +69,84 @@ st.markdown("""
     .pedido-alerta { border-left: 12px solid #DC2626 !important; background-color: #FEF2F2 !important; }
     section[data-testid="stSidebar"] { background-color: #111827 !important; width: 400px !important; }
     section[data-testid="stSidebar"] * { color: white !important; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚚 ExpedFlow: Painel de Controle Ágil")
+st.title("🚚 ExpedFlow: Painel Operacional")
 
-# --- BARRA LATERAL ---
+# --- BARRA LATERAL: ÁREA DE ENTRADA ---
 with st.sidebar:
     st.header("📥 Entrada de Dados")
-    st.write("Dica: Você pode dar **Ctrl+V** com um print aqui!")
     
-    # Campo que recebe o print colado
-    img_colada = st.chat_input("Ou cole o print aqui (Ctrl+V)")
+    # Campo "Receptor" de imagens coladas (Ctrl+V)
+    # Ele fica no topo para você ver que o print entrou
+    print_colado = st.chat_input("Dê Ctrl+V aqui para anexar print")
     
+    if print_colado:
+        st.success("✅ Imagem detectada! Preencha a nota e salve.")
+    
+    st.divider()
+    
+    # Formulário de Cadastro
     with st.form("cadastro_nota", clear_on_submit=True):
         n = st.text_input("Número da NF")
         v = st.text_input("Vendedor")
-        e = st.text_area("Observações / Mudança")
+        e = st.text_area("Observações / Mudança de Endereço")
         
-        btn_salvar = st.form_submit_button("LANÇAR E SALVAR")
+        btn_salvar = st.form_submit_button("LANÇAR NO SISTEMA")
         
         if btn_salvar and n:
-            # Converte imagem colada se existir
-            img_data = None
-            if img_colada and "data:image" in img_colada:
-                img_data = base64.b64decode(img_colada.split(",")[1])
-            
-            conn.cursor().execute(
-                "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, ultima_atualizacao) VALUES (?,?,?,?,?)",
-                (n, v, e, img_data, datetime.now())
-            )
-            conn.commit()
-            st.rerun()
+            # Lógica para converter a imagem colada (Base64) em Bytes para o banco
+            img_byte = None
+            if print_colado and "data:image" in print_colado:
+                try:
+                    img_byte = base64.b64decode(print_colado.split(",")[1])
+                except:
+                    img_byte = None
 
-# --- EXIBIÇÃO ---
+            try:
+                conn.cursor().execute(
+                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, ultima_atualizacao) VALUES (?,?,?,?,?)",
+                    (n, v, e, img_byte, datetime.now())
+                )
+                conn.commit()
+                st.success(f"Nota {n} registrada!")
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Erro ao salvar: {ex}")
+
+# --- CORPO DO SISTEMA ---
 df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
 col_mesa, col_patio = st.columns([1.5, 1])
 
 with col_mesa:
     st.header("⏳ Notas na Mesa")
     pendentes = df[df['status'] == 'PENDENTE']
+    
     for _, row in pendentes.iterrows():
-        is_alerta = any(word in row['endereco'].lower() for word in ['mudar', 'urgente', 'trocar'])
+        is_alerta = any(word in row['endereco'].lower() for word in ['mudar', 'urgente', 'trocar', 'atenção'])
         estilo = "pedido-alerta" if is_alerta else ""
+        
         with st.container():
-            st.markdown(f'<div class="pedido-card {estilo}"><h2>Nota #{row['id_nota']}</h2><p>{row['endereco']}</p></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="pedido-card {estilo}">
+                    <p style='color: #1E40AF !important; font-size: 12px;'>Vendedor: {row['vendedor']}</p>
+                    <h2 style='margin: 0;'>Nota #{row['id_nota']}</h2>
+                    <p style='margin-top: 10px;'>{row['endereco']}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
             if row['anexo']:
-                with st.expander("🖼️ Ver Print Colado"):
+                with st.expander("🖼️ Ver Print Anexado"):
                     st.image(row['anexo'])
-            if st.button(f"CONCLUIR #{row['id_nota']}", key=row['id_nota']):
+            
+            if st.button(f"CONCLUIR CARGA #{row['id_nota']}", key=f"btn_{row['id_nota']}"):
                 conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
                 conn.commit()
                 st.rerun()
 
 with col_patio:
     st.header("✅ Concluídas")
-    st.table(df[df['status'] == 'CONCLUIDO'][['id_nota', 'vendedor']].head(10))
+    concluidos = df[df['status'] == 'CONCLUIDO']
+    st.table(concluidos[['id_nota', 'vendedor']].head(15))
