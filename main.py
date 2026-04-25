@@ -4,14 +4,14 @@ import pandas as pd
 from datetime import datetime
 import base64
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="📑")
+# --- 1. CONFIGURAÇÃO DE AMBIENTE PRO ---
+st.set_page_config(layout="wide", page_title="ExpedFlow | Gestão de Notas", page_icon="📑")
 
-# --- 2. BANCO DE DADOS (Auto-Reparável contra Erros de Coluna) ---
+# --- 2. MOTOR DE BANCO DE DADOS (ANTI-CRASH) ---
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
     cursor = conn.cursor()
-    # Cria a tabela se não existir
+    # Criamos a estrutura com integridade de dados
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS pedidos (
             id_nota TEXT PRIMARY KEY,
@@ -20,200 +20,181 @@ def init_db():
             categoria TEXT,
             status TEXT DEFAULT 'Inserido',
             anexo BLOB,
-            data_hora DATETIME
+            data_hora TEXT
         )
     ''')
-    # Prevenção de KeyError/DatabaseError: Garante que as colunas existam
-    colunas_necessarias = [
-        ('obs', 'TEXT'),
-        ('categoria', 'TEXT'),
-        ('anexo', 'BLOB'),
-        ('data_hora', 'DATETIME')
-    ]
-    for col_nome, col_tipo in colunas_necessarias:
-        try:
-            cursor.execute(f"ALTER TABLE pedidos ADD COLUMN {col_nome} {col_tipo}")
-        except:
-            pass # Coluna já existe
+    # Auto-reparo de colunas (Caso o banco seja antigo)
+    colunas = [('obs', 'TEXT'), ('categoria', 'TEXT'), ('anexo', 'BLOB'), ('data_hora', 'TEXT')]
+    for col, tipo in colunas:
+        try: cursor.execute(f"ALTER TABLE pedidos ADD COLUMN {col} {tipo}")
+        except: pass
     conn.commit()
     return conn
 
-conn = init_db()
+db_conn = init_db()
 
-# --- 3. CSS PARA LAYOUT PROFISSIONAL (Estilo Marcos Gestões) ---
+# --- 3. CSS CUSTOMIZADO (ALTO PADRÃO) ---
 st.markdown("""
     <style>
-    /* Estilo Geral */
-    .stApp { background-color: #F8F9FA !important; }
-    h1, h2, h3, p, span, label, th, td { color: #212529 !important; font-weight: 700 !important; }
-
-    /* Menu Lateral Branco */
+    /* Reset de Cores para Leitura Nítida */
+    .stApp { background-color: #F4F7F9 !important; }
+    h1, h2, h3, p, span, label, th, td { color: #1E293B !important; font-family: 'Inter', sans-serif; }
+    
+    /* Barra Lateral Estilo Dashboard */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
-        border-right: 1px solid #DEE2E6;
-        width: 400px !important;
+        border-right: 1px solid #E2E8F0;
+        width: 380px !important;
+    }
+    
+    /* Estilização da Tabela de Dados (Grid) */
+    .data-row {
+        background-color: #FFFFFF;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #E2E8F0;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
     }
 
-    /* Status Badges */
+    /* Status Badges Profissionais */
     .badge {
-        padding: 4px 12px;
-        border-radius: 15px;
-        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
         font-weight: bold;
-        display: inline-block;
-        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
-    .badge-inserido { background-color: #E3F2FD; color: #0D47A1 !important; border: 1px solid #0D47A1; }
-    .badge-finalizado { background-color: #E8F5E9; color: #1B5E20 !important; border: 1px solid #1B5E20; }
+    .status-inserido { background-color: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+    .status-concluido { background-color: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
 
     /* Tags de Categoria */
-    .cat-tag {
-        font-size: 11px;
+    .tag-cat {
+        background-color: #F1F5F9;
+        color: #475569;
         padding: 2px 8px;
         border-radius: 4px;
-        background-color: #E9ECEF;
-        border: 1px solid #CED4DA;
+        font-size: 11px;
+        border: 1px solid #CBD5E1;
     }
 
-    /* Botões de Ação Compactos */
+    /* Botão de Ação Estilizado */
     .stButton>button {
-        border-radius: 4px;
-        font-weight: bold;
-        height: 2.2em;
+        border-radius: 6px;
+        border: 1px solid #CBD5E1;
+        transition: all 0.2s;
+    }
+    .stButton>button:hover {
+        border-color: #1E40AF;
+        color: #1E40AF;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. SCRIPT PARA CAPTURA DE CTRL+V ---
-st.markdown("""
-    <script>
-    const doc = window.parent.document;
-    doc.addEventListener('paste', (event) => {
-        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
-        for (const item of items) {
-            if (item.kind === 'file') {
-                const blob = item.getAsFile();
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const base64String = e.target.result;
-                    const inputs = doc.querySelectorAll('input');
-                    for (let input of inputs) {
-                        if (input.placeholder.includes('Ctrl+V')) {
-                            input.value = base64String;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            break;
-                        }
-                    }
-                };
-                reader.readAsDataURL(blob);
-            }
-        }
-    });
-    </script>
-    """, unsafe_allow_html=True)
-
-# --- 5. BARRA LATERAL (ENTRADA DE DADOS) ---
+# --- 4. BARRA LATERAL: INPUT DE DADOS ---
 with st.sidebar:
-    st.title("📑 ExpedFlow")
-    st.subheader("➕ Novo Lançamento")
+    st.image("https://cdn-icons-png.flaticon.com/512/2343/2343894.png", width=50)
+    st.title("Gestão de Notas")
     
-    # Campo para Ctrl+V
-    buffer_v = st.text_input("Status do Print:", placeholder="Clique e dê Ctrl+V", key="v_pasted")
-    up_file = st.file_uploader("Ou arraste o arquivo", type=['png', 'jpg', 'jpeg'])
-    
-    img_blob = None
-    if up_file:
-        img_blob = up_file.read()
-    elif "data:image" in buffer_v:
-        img_blob = base64.b64decode(buffer_v.split(",")[1])
-        st.success("✅ Print capturado via Colagem!")
-
-    st.divider()
-
-    with st.form("cadastro", clear_on_submit=True):
-        f_nota = st.text_input("Número da Nota (PDV)")
+    st.subheader("📥 Novo Lançamento")
+    with st.form("form_registro", clear_on_submit=True):
+        f_nota = st.text_input("Nota Fiscal / PDV", placeholder="Ex: 45990")
         f_vend = st.text_input("Vendedor")
-        f_cat = st.selectbox("Categoria da Demanda", [
+        f_cat = st.selectbox("Categoria", [
             "Mudança de Endereço", 
             "Agendamento de Entrega", 
             "Retirada na Indústria", 
             "Aviso Geral"
         ])
-        f_obs = st.text_area("Observação Técnica")
+        f_obs = st.text_area("Observação / Instrução")
+        f_img = st.file_uploader("Anexar Print da Nota", type=['png', 'jpg', 'jpeg'])
         
-        if st.form_submit_button("LANÇAR NO SISTEMA", use_container_width=True):
-            if f_nota:
-                conn.cursor().execute(
+        if st.form_submit_button("REGISTRAR NOTA", use_container_width=True):
+            if f_nota and f_vend:
+                img_blob = f_img.read() if f_img else None
+                data_agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                
+                db_conn.cursor().execute(
                     "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, obs, categoria, anexo, data_hora) VALUES (?,?,?,?,?,?)",
-                    (f_nota, f_vend, f_obs, f_cat, img_blob, datetime.now().strftime("%d/%m/%Y %H:%M"))
+                    (f_nota, f_vend, f_obs, f_cat, img_blob, data_agora)
                 )
-                conn.commit()
-                st.success(f"Nota {f_nota} lançada!")
+                db_conn.commit()
+                st.success(f"Nota {f_nota} registrada!")
                 st.rerun()
+            else:
+                st.error("Preencha Nota e Vendedor.")
 
-# --- 6. PAINEL PRINCIPAL (DATA GRID PROFISSIONAL) ---
-st.title("Controle de Produção e Notas")
-st.caption("Gestão eficiente de expedição e logística interna")
+# --- 5. PAINEL PRINCIPAL: DATA GRID ---
+st.title("📋 Painel de Controle de Expedição")
+st.markdown("---")
 
-# Busca e Filtros
-col_search, col_spacer = st.columns([2, 2])
-with col_search:
-    search_query = st.text_input("🔍 Filtrar por nota ou vendedor...", placeholder="Ex: 154594")
+# Filtros de Pesquisa Rápida
+c_busca, c_filtro, _ = st.columns([2, 1, 1])
+with c_busca:
+    query_search = st.text_input("🔍 Localizar por Nota ou Vendedor...", placeholder="Digite para filtrar...")
 
-# Carregamento Seguro dos Dados
+# Carregamento dos Dados via Pandas
 try:
-    df_raw = pd.read_sql_query("SELECT * FROM pedidos ORDER BY data_hora DESC", conn)
+    df_db = pd.read_sql_query("SELECT * FROM pedidos ORDER BY data_hora DESC", db_conn)
 except:
-    df_raw = pd.DataFrame(columns=['id_nota', 'vendedor', 'obs', 'categoria', 'status', 'anexo', 'data_hora'])
+    df_db = pd.DataFrame(columns=['id_nota', 'vendedor', 'obs', 'categoria', 'status', 'anexo', 'data_hora'])
 
-# Lógica de Busca
-if search_query:
-    df = df_raw[df_raw['id_nota'].str.contains(search_query) | df_raw['vendedor'].str.contains(search_query, case=False)]
+# Aplicação do Filtro
+if query_search:
+    df = df_db[df_db['id_nota'].str.contains(query_search) | df_db['vendedor'].str.contains(query_search, case=False)]
 else:
-    df = df_raw
+    df = df_db
 
-# Cabeçalho da Tabela
-st.markdown("---")
-h1, h2, h3, h4, h5, h6 = st.columns([1, 1, 1.2, 1.5, 0.6, 1])
-h1.markdown("**PDV**")
-h2.markdown("**VENDEDOR**")
-h3.markdown("**STATUS**")
-h4.markdown("**CATEGORIA**")
-h5.markdown("**ARQ**")
-h6.markdown("**AÇÕES**")
-st.markdown("---")
+# CABEÇALHO DO GRID
+h = st.columns([1, 1.2, 1.5, 1.5, 0.8, 1])
+h[0].markdown("**PDV/NOTA**")
+h[1].markdown("**VENDEDOR**")
+h[2].markdown("**STATUS / DATA**")
+h[3].markdown("**CATEGORIA**")
+h[4].markdown("**ANEXO**")
+h[5].markdown("**AÇÕES**")
+st.markdown("<div style='margin-top:-15px'>---</div>", unsafe_allow_html=True)
 
+# LINHAS DO GRID
 if df.empty:
-    st.info("Nenhuma nota aguardando na fila.")
+    st.info("Nenhuma nota encontrada.")
 else:
-    for _, row in df.iterrows():
-        r1, r2, r3, r4, r5, r6 = st.columns([1, 1, 1.2, 1.5, 0.6, 1])
+    for i, row in df.iterrows():
+        r = st.columns([1, 1.2, 1.5, 1.5, 0.8, 1])
         
-        r1.write(f"**{row['id_nota']}**")
-        r2.write(row['vendedor'])
+        # PDV e Vendedor
+        r[0].write(f"**{row['id_nota']}**")
+        r[1].write(row['vendedor'])
         
-        # Status Badge (Inspirado na Marcos Gestões)
-        s_style = "badge-inserido" if row['status'] == 'Inserido' else "badge-finalizado"
-        r3.markdown(f'<span class="badge {s_style}">{row["status"]}<br><small>{row["data_hora"]}</small></span>', unsafe_allow_html=True)
+        # Status e Data
+        s_class = "status-inserido" if row['status'] == 'Inserido' else "status-concluido"
+        r[2].markdown(f'<span class="badge {s_class}">{row["status"]}</span><br><small>{row["data_hora"]}</small>', unsafe_allow_html=True)
         
-        # Categoria e Obs
-        r4.markdown(f'<span class="cat-tag">{row["categoria"]}</span><br><small style="font-weight:normal;">{row["obs"][:40]}</small>', unsafe_allow_html=True)
+        # Categoria e Observação
+        obs_curta = (row['obs'][:30] + '...') if row['obs'] and len(row['obs']) > 30 else (row['obs'] or "")
+        r[3].markdown(f'<span class="tag-cat">{row["categoria"]}</span><br><small>{obs_curta}</small>', unsafe_allow_html=True)
         
-        # Arquivo/Anexo
+        # Visualização de Anexo (Botão Ícone)
         if row['anexo']:
-            if r5.button("👁️", key=f"img_{row['id_nota']}"):
-                st.image(row['anexo'], caption=f"Print Nota {row['id_nota']}")
+            if r[4].button("👁️ Ver", key=f"v_{row['id_nota']}"):
+                st.image(row['anexo'], caption=f"Anexo da Nota {row['id_nota']}", use_container_width=False, width=400)
         else:
-            r5.write("-")
-        
-        # Ações Dinâmicas
+            r[4].write("-")
+            
+        # Ações Diretas
         if row['status'] == 'Inserido':
-            if r6.button("✅ Finalizar", key=f"btn_f_{row['id_nota']}", use_container_width=True):
-                conn.cursor().execute("UPDATE pedidos SET status = 'Finalizado' WHERE id_nota = ?", (row['id_nota'],))
-                conn.commit()
+            if r[5].button("✅ Concluir", key=f"c_{row['id_nota']}", use_container_width=True):
+                db_conn.cursor().execute("UPDATE pedidos SET status = 'Concluído' WHERE id_nota = ?", (row['id_nota'],))
+                db_conn.commit()
                 st.rerun()
         else:
-            if r6.button("🗑️ Excluir", key=f"btn_d_{row['id_nota']}", use_container_width=True):
-                conn.cursor().execute("DELETE FROM pedidos WHERE id_nota = ?", (row['id_nota'],))
-                conn.commit()
+            if r[5].button("🗑️ Excluir", key=f"d_{row['id_nota']}", use_container_width=True):
+                db_conn.cursor().execute("DELETE FROM pedidos WHERE id_nota = ?", (row['id_nota'],))
+                db_conn.commit()
                 st.rerun()
+
+# --- 6. RODAPÉ ---
+st.markdown("---")
+st.caption(f"ExpedFlow Pro | Sistema Conectado | {len(df)} registros exibidos")
