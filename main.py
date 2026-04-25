@@ -2,11 +2,12 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
+from PIL import Image
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="🚚")
 
-# --- BANCO DE DADOS ---
+# --- BANCO DE DADOS (Atualizado para suportar anexos) ---
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -16,6 +17,7 @@ def init_db():
             vendedor TEXT,
             endereco TEXT,
             status TEXT DEFAULT 'PENDENTE',
+            anexo BLOB,
             ultima_atualizacao DATETIME
         )
     ''')
@@ -24,110 +26,93 @@ def init_db():
 
 conn = init_db()
 
-# --- CSS PARA CORRIGIR A VISIBILIDADE (AUTO-CONTRASTE) ---
+# --- CSS DE ALTO CONTRASTE ---
 st.markdown("""
     <style>
-    /* Forçar cores nítidas e fundo sólido */
-    .stApp { background-color: #E5E7EB !important; }
-    
-    /* Títulos e Textos Principais sempre pretos */
-    h1, h2, h3, p, span, label { 
-        color: #111827 !important; 
-        font-weight: 600 !important; 
-    }
-
-    /* Card de Pedido - Super Visível */
+    .stApp { background-color: #F3F4F6 !important; }
+    h1, h2, h3, p, label { color: #111827 !important; font-weight: 700 !important; }
     .pedido-card {
         background-color: #FFFFFF !important;
-        padding: 20px;
-        border-radius: 8px;
-        border: 2px solid #D1D5DB;
-        border-left: 10px solid #059669 !important; /* Verde Forte */
-        margin-bottom: 15px;
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #E5E7EB;
+        border-left: 12px solid #059669 !important;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-
-    /* Card de Alerta/Urgência - Super Contraste */
-    .pedido-alerta {
-        border-left: 10px solid #DC2626 !important; /* Vermelho Vivo */
-        background-color: #FEE2E2 !important;
-    }
-
-    /* Ajuste da Barra Lateral para não sumir */
-    section[data-testid="stSidebar"] {
-        background-color: #111827 !important;
-    }
+    .pedido-alerta { border-left: 12px solid #DC2626 !important; background-color: #FEF2F2 !important; }
+    section[data-testid="stSidebar"] { background-color: #111827 !important; width: 400px !important; }
     section[data-testid="stSidebar"] * { color: white !important; }
-
-    /* Tags de Vendedor */
-    .vendedor-tag {
-        background-color: #DBEAFE;
-        color: #1E40AF !important;
-        padding: 4px 12px;
-        border-radius: 6px;
-        font-size: 14px;
-        display: inline-block;
-        margin-bottom: 10px;
-    }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CABEÇALHO ---
-st.title("🚚 Painel de Expedição: Controle de Notas")
-st.markdown("---")
+st.title("🚚 ExpedFlow: Painel Operacional")
 
-# Carregar Dados
+# --- BARRA LATERAL: ÁREA DE IMPORTAÇÃO E CADASTRO ---
+with st.sidebar:
+    st.header("📥 Entrada de Dados")
+    
+    # Opção 1: Importar Arquivo/Print
+    st.subheader("Anexar Documento ou Print")
+    arquivo_upload = st.file_uploader("Arraste o print ou arquivo aqui", type=['png', 'jpg', 'jpeg', 'pdf'])
+    
+    st.divider()
+    
+    # Opção 2: Formulário Manual
+    st.subheader("Dados da Nota")
+    with st.form("cadastro_nota", clear_on_submit=True):
+        n = st.text_input("Número da NF")
+        v = st.text_input("Vendedor")
+        e = st.text_area("Observações / Mudança de Endereço")
+        
+        btn_salvar = st.form_submit_button("LANÇAR NO SISTEMA")
+        
+        if btn_salvar and n:
+            img_byte = arquivo_upload.read() if arquivo_upload else None
+            try:
+                conn.cursor().execute(
+                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, ultima_atualizacao) VALUES (?,?,?,?,?)",
+                    (n, v, e, img_byte, datetime.now())
+                )
+                conn.commit()
+                st.success(f"Nota {n} registrada!")
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Erro ao salvar: {ex}")
+
+# --- CORPO DO SISTEMA ---
 df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
-
-# Colunas Principais
 col_mesa, col_patio = st.columns([1.5, 1])
 
 with col_mesa:
-    st.subheader("📥 NA MESA (Aguardando)")
+    st.header("⏳ Notas na Mesa")
     pendentes = df[df['status'] == 'PENDENTE']
     
-    if pendentes.empty:
-        st.success("Tudo em dia! Nenhuma nota pendente.")
-    else:
-        for _, row in pendentes.iterrows():
-            # Lógica de Alerta Visual
-            is_alerta = any(palavra in row['endereco'].lower() for palavra in ['mudar', 'urgente', 'atenção', 'trocar'])
-            estilo = "pedido-alerta" if is_alerta else ""
+    for _, row in pendentes.iterrows():
+        is_alerta = any(word in row['endereco'].lower() for word in ['mudar', 'urgente', 'trocar', 'atenção'])
+        estilo = "pedido-alerta" if is_alerta else ""
+        
+        with st.container():
+            st.markdown(f"""
+                <div class="pedido-card {estilo}">
+                    <p style='color: #1E40AF !important; font-size: 12px;'>Vendedor: {row['vendedor']}</p>
+                    <h2 style='margin: 0;'>Nota #{row['id_nota']}</h2>
+                    <p style='margin-top: 10px;'>{row['endereco']}</p>
+                </div>
+            """, unsafe_allow_html=True)
             
-            with st.container():
-                st.markdown(f"""
-                    <div class="pedido-card {estilo}">
-                        <div class="vendedor-tag">Vendedor: {row['vendedor']}</div>
-                        <h3>Nota: {row['id_nota']}</h3>
-                        <p><strong>INFORMAÇÃO:</strong> {row['endereco']}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                if st.button(f"Mandar p/ Carga: {row['id_nota']}", key=row['id_nota'], use_container_width=True):
-                    conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO', ultima_atualizacao = ? WHERE id_nota = ?", (datetime.now(), row['id_nota']))
-                    conn.commit()
-                    st.rerun()
+            # Se houver anexo/print, mostra um botão para ver
+            if row['anexo']:
+                with st.expander("🖼️ Ver Print/Anexo"):
+                    st.image(row['anexo'])
+            
+            if st.button(f"CONCLUIR CARGA #{row['id_nota']}", key=f"btn_{row['id_nota']}"):
+                conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
+                conn.commit()
+                st.rerun()
 
 with col_patio:
-    st.subheader("✅ NO PÁTIO (Carregado)")
+    st.header("✅ Concluídas")
     concluidos = df[df['status'] == 'CONCLUIDO']
-    if concluidos.empty:
-        st.write("Ainda não houve saídas hoje.")
-    else:
-        # Tabela com as últimas saídas
-        st.table(concluidos[['id_nota', 'vendedor']].head(10))
-
-# BARRA LATERAL (Entrada de Dados)
-with st.sidebar:
-    st.header("Lançar Nova Nota")
-    with st.form("add_nota", clear_on_submit=True):
-        n = st.text_input("Número da Nota")
-        v = st.text_input("Vendedor")
-        e = st.text_area("Observações (Endereço, etc)")
-        if st.form_submit_button("CADASTRAR NO SISTEMA"):
-            if n and v:
-                try:
-                    conn.cursor().execute("INSERT INTO pedidos (id_nota, vendedor, endereco, ultima_atualizacao) VALUES (?,?,?,?)", (n,v,e,datetime.now()))
-                    conn.commit()
-                    st.rerun()
-                except:
-                    st.error("Nota já cadastrada!")
+    st.table(concluidos[['id_nota', 'vendedor']].head(15))
