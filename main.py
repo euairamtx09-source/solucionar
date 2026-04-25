@@ -4,209 +4,210 @@ import pandas as pd
 from datetime import datetime
 import io
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="Marcos Gestões - Logística", page_icon="🏭")
+# --- 1. CONFIGURAÇÃO DE ALTO NÍVEL ---
+st.set_page_config(
+    layout="wide", 
+    page_title="ExpedFlow | Gestão Logística", 
+    page_icon="🏗️",
+    initial_sidebar_state="expanded"
+)
 
-# --- 2. BANCO DE DADOS COM SUPORTE A ANEXOS ---
+# --- 2. MOTOR DE DADOS ---
 def init_db():
-    conn = sqlite3.connect('industria_marcos.db', check_same_thread=False)
+    conn = sqlite3.connect('industria_marcos_pro.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    # Tabela de Fluxo (com coluna BLOB para imagens/prints)
     cursor.execute('''CREATE TABLE IF NOT EXISTS fluxo (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pdv TEXT, 
-        loja TEXT, 
-        tipo TEXT, 
-        detalhes TEXT, 
-        anexo BLOB, 
-        status TEXT DEFAULT 'Pendente', 
-        data TEXT, 
-        usuario TEXT)''')
-    
-    # Tabela de Usuários
+        pdv TEXT, loja TEXT, tipo TEXT, detalhes TEXT, 
+        anexo BLOB, status TEXT DEFAULT 'Pendente', data TEXT, usuario TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-        username TEXT PRIMARY KEY, 
-        password TEXT, 
-        nome TEXT, 
-        perfil TEXT)''')
-    
-    # Inserção de usuários padrão
+        username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT)''')
     cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Marcos Admin', 'Administrador')")
-    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('ira', '123', 'Irã', 'Visitante')")
     conn.commit()
     return conn
 
 db_conn = init_db()
 
-# --- 3. CSS DE ALTO CONTRASTE (TRAVA DE VISIBILIDADE) ---
+# --- 3. CSS PROFISSIONAL (DESIGN SYSTEM) ---
 st.markdown("""
     <style>
-    /* Força fundo branco e texto preto absoluto */
-    .stApp { background-color: #FFFFFF !important; }
-    h1, h2, h3, p, span, label, div, b, .stMarkdown {
-        color: #000000 !important;
-        font-weight: 800 !important;
-    }
+    /* Importação de fonte moderna */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
-    /* Estilização da Sidebar */
+    * { font-family: 'Inter', sans-serif !important; }
+
+    /* Fundo e Container Principal */
+    .stApp { background-color: #F1F5F9 !important; }
+    
+    /* Sidebar Dark Mode */
     section[data-testid="stSidebar"] {
-        background-color: #F8FAFC !important;
-        border-right: 3px solid #000000;
+        background-color: #0F172A !important;
+        color: white !important;
+    }
+    section[data-testid="stSidebar"] * { color: white !important; }
+
+    /* Cards de Resumo (KPIS) */
+    .metric-card {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        border: 1px solid #E2E8F0;
+        text-align: center;
     }
 
-    /* Campos de entrada */
-    .stTextInput>div>div>input, .stTextArea>div>textarea {
-        border: 2px solid #000000 !important;
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
+    /* Estilização dos Pedidos */
+    .ticket-container {
+        background-color: #FFFFFF;
+        border-left: 5px solid #0F172A;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
     }
 
-    /* Botão Principal Estilo Industrial */
+    /* Botões Profissionais */
     .stButton>button {
-        background-color: #000000 !important;
-        color: #FFFFFF !important;
-        border-radius: 5px !important;
-        font-weight: bold !important;
-        border: 1px solid #000000 !important;
-        height: 3em !important;
+        background-color: #0F172A !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        font-weight: 600 !important;
+        border: none !important;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #1E293B !important;
+        transform: translateY(-1px);
+    }
+
+    /* Inputs e Forms */
+    .stTextInput input, .stSelectbox select, .stTextArea textarea {
+        border-radius: 8px !important;
+        border: 1px solid #CBD5E1 !important;
     }
     
-    /* Container de Pedidos */
-    .pedido-box {
-        border: 2px solid #000000;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        background-color: #FFFFFF;
-    }
+    /* Texto em negrito forçado para visibilidade */
+    b, strong, label { color: #0F172A !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. LÓGICA DE AUTENTICAÇÃO ---
+# --- 4. SEGURANÇA ---
 if "auth" not in st.session_state:
     st.session_state["auth"] = False
 
 if not st.session_state["auth"]:
-    _, col, _ = st.columns([1, 1.5, 1])
+    _, col, _ = st.columns([1, 1, 1])
     with col:
-        st.markdown("<h1 style='text-align:center;'>MARCOS GESTÕES</h1>", unsafe_allow_html=True)
-        with st.form("login_form"):
+        st.markdown("<div style='height:100px'></div>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center; color:#0F172A;'>EXPEDFLOW</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;'>Painel Administrativo v13.0</p>", unsafe_allow_html=True)
+        with st.form("login_pro"):
             u = st.text_input("Usuário")
             p = st.text_input("Senha", type="password")
-            if st.form_submit_button("ACESSAR SISTEMA"):
+            if st.form_submit_button("ENTRAR NO SISTEMA", use_container_width=True):
                 res = db_conn.cursor().execute("SELECT nome, perfil FROM usuarios WHERE username=? AND password=?", (u,p)).fetchone()
                 if res:
                     st.session_state.update({"auth": True, "user_name": res[0], "user_perfil": res[1]})
                     st.rerun()
-                else:
-                    st.error("Credenciais incorretas.")
+                else: st.error("Acesso Negado")
     st.stop()
 
 # --- 5. NAVEGAÇÃO LATERAL ---
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state['user_name']}")
-    st.markdown(f"Acesso: **{st.session_state['user_perfil']}**")
-    st.divider()
-    
-    menu = st.radio("NAVEGAÇÃO", ["📋 PAINEL DE CARGA", "📥 REGISTRAR MOVIMENTAÇÃO", "👥 GERENCIAR EQUIPE"])
-    
-    if st.button("SAIR DO SISTEMA"):
+    st.markdown(f"<h2 style='margin-bottom:0;'>{st.session_state['user_name']}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='opacity:0.7;'>{st.session_state['user_perfil']}</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    menu = st.radio("MENU PRINCIPAL", ["📊 Dashboard", "📋 Painel de Carga", "📥 Registrar Movimentação", "👥 Usuários"])
+    if st.button("SAIR", use_container_width=True):
         st.session_state["auth"] = False
         st.rerun()
 
-# --- 6. TELA: PAINEL DE CARGA ---
-if menu == "📋 PAINEL DE CARGA":
-    st.title("Painel de Carga")
-    busca = st.text_input("🔎 BUSCAR PDV (Ex: 12345)")
+# --- 6. TELA: DASHBOARD (NOVIDADE) ---
+if menu == "📊 Dashboard":
+    st.title("Visão Geral da Operação")
+    df = pd.read_sql_query("SELECT * FROM fluxo", db_conn)
+    
+    c1, c2, c3 = st.columns(3)
+    pendentes = len(df[df['status'] == 'Pendente'])
+    concluidos = len(df[df['status'] == 'Concluído'])
+    
+    with c1:
+        st.markdown(f"<div class='metric-card'><p>PENDENTES</p><h2>{pendentes}</h2></div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"<div class='metric-card'><p>CONCLUÍDOS</p><h2>{concluidos}</h2></div>", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"<div class='metric-card'><p>TOTAL HOJE</p><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+
+# --- 7. TELA: PAINEL DE CARGA ---
+elif menu == "📋 Painel de Carga":
+    st.title("Controle de Fluxo")
+    busca = st.text_input("🔍 Pesquisar PDV ou Loja...")
     
     df = pd.read_sql_query("SELECT * FROM fluxo ORDER BY id DESC", db_conn)
     if busca:
-        df = df[df['pdv'].str.contains(busca)]
+        df = df[df['pdv'].str.contains(busca, case=False) | df['loja'].str.contains(busca, case=False)]
 
     for i, r in df.iterrows():
-        # Layout em Box para garantir leitura
-        st.markdown(f"""
-            <div style="border: 2px solid black; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-                <span style="font-size: 20px;"><b>PDV: {r['pdv']}</b></span> | <b>LOJA: {r['loja']}</b><br>
-                <span style="color: #d32f2f;">TIPO: {r['tipo']}</span><br>
-                <p style="margin-top: 10px;"><b>DETALHES:</b> {r['detalhes']}</p>
-                <small>Registrado em: {r['data']} por {r['usuario']}</small>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        c1, c2 = st.columns([0.7, 0.3])
-        
-        # Mostrar Anexo se existir
-        if r['anexo']:
-            with c1.expander("🖼️ VER PRINT / ARQUIVO"):
-                st.image(r['anexo'])
-        
-        # Ações baseadas no perfil
-        if st.session_state["user_perfil"] != "Visitante":
-            if r['status'] == 'Pendente':
-                if c2.button(f"DAR BAIXA #{r['pdv']}", key=f"bx_{r['id']}"):
+        # Layout Estilo Ticket
+        with st.container():
+            st.markdown(f"""
+                <div class="ticket-container">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="font-size: 1.2rem;"><b>PDV: {r['pdv']}</b></span>
+                        <span style="background: {'#FFE4E6' if r['status'] == 'Pendente' else '#DCFCE7'}; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem;">
+                            {r['status']}
+                        </span>
+                    </div>
+                    <p style="margin: 10px 0;"><b>📍 Loja:</b> {r['loja']} | <b>🛠️ Tipo:</b> {r['tipo']}</p>
+                    <p style="font-size: 0.9rem; color: #475569;">{r['detalhes']}</p>
+                    <hr style="border: 0.1px solid #E2E8F0; margin: 10px 0;">
+                    <small>📅 {r['data']} | 👤 Resp: {r['usuario']}</small>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            c1, c2 = st.columns([0.8, 0.2])
+            if r['anexo']:
+                with c1.expander("📂 Ver Documento / Print"):
+                    st.image(r['anexo'])
+            
+            if st.session_state['user_perfil'] != "Visitante" and r['status'] == 'Pendente':
+                if c2.button("FINALIZAR", key=f"fin_{r['id']}", use_container_width=True):
                     db_conn.cursor().execute("UPDATE fluxo SET status='Concluído' WHERE id=?", (r['id'],))
                     db_conn.commit()
                     st.rerun()
-            else:
-                c2.success("CONCLUÍDO ✅")
-        else:
-            c2.info("Apenas Leitura")
-        st.divider()
 
-# --- 7. TELA: REGISTRAR MOVIMENTAÇÃO (COM ANEXOS) ---
-elif menu == "📥 REGISTRAR MOVIMENTAÇÃO":
-    if st.session_state["user_perfil"] == "Visitante":
-        st.warning("Seu perfil não tem permissão para registrar novas movimentações.")
-    else:
-        st.title("Registrar Ocorrência")
-        with st.form("form_registro", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            f_pdv = col1.text_input("NÚMERO DO PDV")
-            f_loja = col2.selectbox("LOJA", ["Luziânia", "Jardim Ingá", "Indústria", "Outra"])
-            
-            f_tipo = st.selectbox("TIPO DE OCORRÊNCIA", [
-                "Retirado na Indústria", 
-                "Retirada na Loja", 
-                "Cancelamento/Devolução"
-            ])
-            
-            f_det = st.text_area("DETALHES DA OCORRÊNCIA")
-            
-            # Campo para Anexo (Print ou Arquivo)
-            f_anexo = st.file_uploader("ANEXAR PRINT OU FOTO DO PEDIDO", type=['png', 'jpg', 'jpeg', 'pdf'])
-            
-            if st.form_submit_button("LANÇAR NO SISTEMA"):
-                if f_pdv:
-                    # Processamento do arquivo para salvar no banco
-                    blob_data = f_anexo.read() if f_anexo is not None else None
-                    
-                    agora = datetime.now().strftime("%d/%m %H:%M")
-                    db_conn.cursor().execute(
-                        "INSERT INTO fluxo (pdv, loja, tipo, detalhes, anexo, data, usuario) VALUES (?,?,?,?,?,?,?)",
-                        (f_pdv, f_loja, f_tipo, f_det, blob_data, agora, st.session_state["user_name"])
-                    )
-                    db_conn.commit()
-                    st.success(f"PDV {f_pdv} registrado com sucesso!")
-                else:
-                    st.error("O número do PDV é obrigatório para o registro.")
-
-# --- 8. TELA: GESTÃO DE EQUIPE (ADMIN) ---
-elif menu == "👥 GERENCIAR EQUIPE":
-    if st.session_state["user_perfil"] != "Administrador":
-        st.error("Acesso restrito ao Administrador.")
-    else:
-        st.title("Controle de Usuários")
-        with st.form("add_user"):
-            c1, c2 = st.columns(2)
-            new_u = c1.text_input("LOGIN (Usuário)")
-            new_n = c2.text_input("NOME COMPLETO")
-            new_s = c1.text_input("SENHA", type="password")
-            new_p = c2.selectbox("PERFIL DE ACESSO", ["Administrador", "Moderador", "Loja", "Visitante"])
-            
-            if st.form_submit_button("CADASTRAR FUNCIONÁRIO"):
-                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", 
-                                       (new_u, new_s, new_n, new_p))
+# --- 8. TELA: REGISTRAR MOVIMENTAÇÃO ---
+elif menu == "📥 Registrar Movimentação":
+    st.title("Nova Movimentação")
+    with st.form("form_v13"):
+        c1, c2 = st.columns(2)
+        f_pdv = c1.text_input("Número do PDV")
+        f_loja = c2.selectbox("Origem", ["Luziânia", "Jardim Ingá", "Indústria", "Outra"])
+        f_tipo = st.selectbox("Tipo de Ocorrência", ["Retirado na Indústria", "Retirada na Loja", "Cancelamento/Devolução"])
+        f_det = st.text_area("Observações Técnicas")
+        f_anexo = st.file_uploader("Anexar Comprovante / Print", type=['png', 'jpg', 'jpeg', 'pdf'])
+        
+        if st.form_submit_button("CONFIRMAR E LANÇAR", use_container_width=True):
+            if f_pdv:
+                blob = f_anexo.read() if f_anexo else None
+                dt = datetime.now().strftime("%d/%m/%Y %H:%M")
+                db_conn.cursor().execute("INSERT INTO fluxo (pdv, loja, tipo, detalhes, anexo, data, usuario) VALUES (?,?,?,?,?,?,?)",
+                                       (f_pdv, f_loja, f_tipo, f_det, blob, dt, st.session_state['user_name']))
                 db_conn.commit()
-                st.success(f"Usuário {new_n} salvo com sucesso!")
+                st.success("Operação Registrada!")
+                st.rerun()
+
+# --- 9. TELA: USUÁRIOS ---
+elif menu == "👥 Usuários":
+    if st.session_state['user_perfil'] == "Administrador":
+        st.title("Gestão de Acessos")
+        with st.form("user_v13"):
+            u_l = st.text_input("Login")
+            u_n = st.text_input("Nome")
+            u_s = st.text_input("Senha", type="password")
+            u_p = st.selectbox("Nível", ["Administrador", "Moderador", "Loja", "Visitante"])
+            if st.form_submit_button("CADASTRAR USUÁRIO"):
+                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", (u_l, u_s, u_n, u_p))
+                db_conn.commit()
+                st.success("Usuário Atualizado")
