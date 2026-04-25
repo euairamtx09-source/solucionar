@@ -7,7 +7,7 @@ import base64
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="🚚")
 
-# --- 2. BANCO DE DADOS (Blindado contra erros) ---
+# --- 2. BANCO DE DADOS (Atualizado para Categorias) ---
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -16,73 +16,55 @@ def init_db():
             id_nota TEXT PRIMARY KEY,
             vendedor TEXT,
             endereco TEXT,
+            categoria TEXT,
             status TEXT DEFAULT 'PENDENTE',
             anexo BLOB,
             ultima_atualizacao DATETIME
         )
     ''')
-    # Adiciona a coluna anexo caso o banco seja de uma versão anterior
-    try:
-        cursor.execute("ALTER TABLE pedidos ADD COLUMN anexo BLOB")
-    except:
-        pass 
+    # Atualização de segurança para colunas novas
+    try: cursor.execute("ALTER TABLE pedidos ADD COLUMN categoria TEXT")
+    except: pass
+    try: cursor.execute("ALTER TABLE pedidos ADD COLUMN anexo BLOB")
+    except: pass
     conn.commit()
     return conn
 
 conn = init_db()
 
-# --- 3. CSS ANTI-ESTOURO (Máxima Legibilidade) ---
+# --- 3. CSS DE ALTO CONTRASTE E CORES POR CATEGORIA ---
 st.markdown("""
     <style>
-    /* Bloqueia cores de fundo e texto para evitar 'tela branca' */
-    .stApp { 
-        background-color: #E5E7EB !important; 
-    }
+    .stApp { background-color: #E5E7EB !important; }
+    h1, h2, h3, p, span, label { color: #000000 !important; font-weight: 800 !important; }
     
-    /* Força todo o texto para preto sólido */
-    h1, h2, h3, p, span, label, li, td, th { 
-        color: #000000 !important; 
-        font-weight: 700 !important; 
-    }
-
-    /* Barra Lateral Estilo Google Sólida */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
-        border-right: 3px solid #9CA3AF;
+        border-right: 3px solid #000000;
         width: 400px !important;
     }
-    
-    /* Inputs com bordas fortes */
-    .stTextInput input, .stTextArea textarea {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 2px solid #000000 !important;
-    }
 
-    /* Cards Kanban de Alto Contraste */
-    .pedido-card {
+    /* Estilização dos Cards baseada em Categorias */
+    .card {
         background-color: #FFFFFF !important;
         padding: 20px;
-        border-radius: 8px;
-        border: 2px solid #000000;
-        border-left: 15px solid #059669 !important; /* Verde Vivo */
+        border-radius: 10px;
+        border: 3px solid #000000;
         margin-bottom: 15px;
-        box-shadow: 4px 4px 0px #000000;
+        box-shadow: 5px 5px 0px #000000;
     }
     
-    .pedido-alerta {
-        border-left: 15px solid #DC2626 !important; /* Vermelho Vivo */
-        background-color: #FEE2E2 !important;
-    }
+    .cat-mudanca { border-left: 20px solid #DC2626 !important; } /* Vermelho */
+    .cat-agendamento { border-left: 20px solid #2563EB !important; } /* Azul */
+    .cat-retirada { border-left: 20px solid #D97706 !important; } /* Laranja */
+    .cat-aviso { border-left: 20px solid #6B7280 !important; } /* Cinza */
 
-    /* Botões Grandes e Visíveis */
-    .stButton>button {
-        background-color: #2563EB !important;
-        color: #FFFFFF !important;
-        font-weight: bold !important;
-        border: 2px solid #000000 !important;
-        height: 3.5em;
-        width: 100%;
+    .tag {
+        padding: 4px 10px;
+        border-radius: 5px;
+        color: white !important;
+        font-size: 12px;
+        text-transform: uppercase;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -115,77 +97,87 @@ st.markdown("""
     </script>
     """, unsafe_allow_html=True)
 
-# --- 5. INTERFACE DO USUÁRIO ---
-st.title("🚚 Painel de Expedição")
+# --- 5. INTERFACE ---
+st.title("🚚 ExpedFlow: Painel Categorizado")
 
 with st.sidebar:
-    st.header("📥 Entrada de Notas")
+    st.header("📥 Lançar Nova Demanda")
     
-    # Receptor de Imagem (Drag & Drop)
-    arquivo_upload = st.file_uploader("Arraste o print aqui", type=['png', 'jpg', 'jpeg'])
-    
-    # Receptor de Imagem (Ctrl+V)
-    buffer_colagem = st.text_input("Receptor de Print:", placeholder="Clique aqui e dê Ctrl+V", key="buffer_colagem")
+    # Receptor de Imagem
+    arquivo_upload = st.file_uploader("Arrastar Print", type=['png', 'jpg', 'jpeg'])
+    buffer_colagem = st.text_input("Receptor Ctrl+V", placeholder="Clique e dê Ctrl+V", key="receptor")
     
     final_blob = None
-    if arquivo_upload:
-        final_blob = arquivo_upload.read()
-        st.success("✅ Arquivo carregado!")
+    if arquivo_upload: final_blob = arquivo_upload.read()
     elif "data:image" in buffer_colagem:
         final_blob = base64.b64decode(buffer_colagem.split(",")[1])
-        st.success("✅ Print colado com sucesso!")
-        with st.expander("Ver prévia do print"):
-            st.image(final_blob)
+        st.success("✅ Print capturado!")
 
     st.divider()
 
-    with st.form("cadastro_nota", clear_on_submit=True):
-        n = st.text_input("Número da NF")
+    with st.form("cadastro", clear_on_submit=True):
+        n = st.text_input("Número da Nota")
         v = st.text_input("Vendedor")
-        e = st.text_area("Observações/Endereço")
-        if st.form_submit_button("CADASTRAR NO SISTEMA"):
+        
+        # O PONTO CHAVE: SELEÇÃO DE CATEGORIA
+        cat = st.selectbox("Tipo de Demanda", [
+            "Mudança de Endereço", 
+            "Agendamento de Entrega", 
+            "Retirada de Material", 
+            "Aviso Geral"
+        ])
+        
+        e = st.text_area("Detalhes/Observações")
+        
+        if st.form_submit_button("LANÇAR NOTA NO PAINEL"):
             if n:
                 conn.cursor().execute(
-                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, status, ultima_atualizacao) VALUES (?,?,?,?,?,?)",
-                    (n, v, e, final_blob, 'PENDENTE', datetime.now())
+                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, categoria, anexo, ultima_atualizacao) VALUES (?,?,?,?,?,?)",
+                    (n, v, e, cat, final_blob, datetime.now())
                 )
                 conn.commit()
                 st.rerun()
 
-# --- 6. EXIBIÇÃO KANBAN ---
+# --- 6. PAINEL DE EXIBIÇÃO ---
 df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
-col_mesa, col_patio = st.columns([1.5, 1])
+col_mesa, col_patio = st.columns([2, 1])
 
 with col_mesa:
-    st.subheader("📋 FILA DE CARGA (MESA)")
+    st.subheader("📋 Fila de Notas (Infinito)")
     pendentes = df[df['status'] == 'PENDENTE']
     
     for _, row in pendentes.iterrows():
-        # Lógica de Alerta de Mudança
-        is_alerta = any(x in str(row['endereco']).lower() for x in ['mudar', 'urgente', 'atenção', 'trocar', 'erro'])
-        estilo = "pedido-alerta" if is_alerta else ""
+        # Define a classe CSS baseada na categoria
+        css_cat = "cat-aviso"
+        cor_tag = "#6B7280"
         
+        if row['categoria'] == "Mudança de Endereço":
+            css_cat, cor_tag = "cat-mudanca", "#DC2626"
+        elif row['categoria'] == "Agendamento de Entrega":
+            css_cat, cor_tag = "cat-agendamento", "#2563EB"
+        elif row['categoria'] == "Retirada de Material":
+            css_cat, cor_tag = "cat-retirada", "#D97706"
+
         with st.container():
             st.markdown(f"""
-                <div class="pedido-card {estilo}">
-                    <p style='margin:0; font-size:14px; text-decoration: underline;'>Vendedor: {row['vendedor']}</p>
-                    <h2 style='margin:0;'>NOTA: {row['id_nota']}</h2>
-                    <p style='margin-top:10px; font-size:18px;'>{row['endereco']}</p>
+                <div class="card {css_cat}">
+                    <span class="tag" style="background-color: {cor_tag};">{row['categoria']}</span>
+                    <p style="margin-top:10px; font-size:14px;">Vendedor: {row['vendedor']}</p>
+                    <h2 style="margin:0;">Nota #{row['id_nota']}</h2>
+                    <p style="font-size:18px; margin-top:10px; background:#f9f9f9; padding:10px; border-radius:5px;">{row['endereco']}</p>
                 </div>
             """, unsafe_allow_html=True)
             
             if row['anexo']:
-                with st.expander("🖼️ Ver Foto Anexada"):
+                with st.expander("🖼️ Ver Print"):
                     st.image(row['anexo'])
             
-            if st.button(f"CONCLUIR #{row['id_nota']}", key=f"btn_{row['id_nota']}"):
-                conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO', ultima_atualizacao = ? WHERE id_nota = ?", (datetime.now(), row['id_nota']))
+            if st.button(f"CONCLUIR NOTA {row['id_nota']}", key=f"btn_{row['id_nota']}"):
+                conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
                 conn.commit()
                 st.rerun()
 
 with col_patio:
-    st.subheader("✅ JÁ NO PÁTIO")
+    st.subheader("✅ Histórico (Hoje)")
     concluidos = df[df['status'] == 'CONCLUIDO']
-    if not concluidos.empty:
-        # Tabela com cores sólidas
-        st.dataframe(concluidos[['id_nota', 'vendedor', 'ultima_atualizacao']], use_container_width=True)
+    st.dataframe(concluidos[['id_nota', 'vendedor', 'categoria']], use_container_width=True)
