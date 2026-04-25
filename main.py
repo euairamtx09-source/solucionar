@@ -3,51 +3,43 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="Marcos Gestões", page_icon="🏢")
+# --- 1. CONFIGURAÇÃO E BANCO DE DADOS ---
+st.set_page_config(layout="wide", page_title="Indústria Integrada", page_icon="🏭")
 
-# --- 2. BANCO DE DADOS COM REPARO AUTOMÁTICO ---
 def init_db():
-    conn = sqlite3.connect('expedicao.db', check_same_thread=False)
+    conn = sqlite3.connect('industria.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    # Criar tabelas se não existirem
-    cursor.execute('''CREATE TABLE IF NOT EXISTS pedidos 
-        (id_nota TEXT PRIMARY KEY, loja TEXT, status TEXT DEFAULT 'Inserido', retirada TEXT, obs TEXT, data_hora TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios 
-        (username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT)''')
-
-    # FIX PARA DatabaseError: Verifica e adiciona colunas faltantes em 'usuarios'
-    cursor.execute("PRAGMA table_info(usuarios)")
-    cols_user = [info[1] for info in cursor.fetchall()]
-    if 'perfil' not in cols_user:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN perfil TEXT DEFAULT 'Visitante'")
-    if 'nome' not in cols_user:
-        cursor.execute("ALTER TABLE usuarios ADD COLUMN nome TEXT")
-
-    # FIX PARA OperationalError: Verifica e adiciona colunas em 'pedidos'
-    cursor.execute("PRAGMA table_info(pedidos)")
-    cols_ped = [info[1] for info in cursor.fetchall()]
-    for c in ['loja', 'retirada', 'obs', 'data_hora']:
-        if c not in cols_ped:
-            cursor.execute(f"ALTER TABLE pedidos ADD COLUMN {c} TEXT")
-
-    # Garante um administrador inicial
-    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Marcos Admin', 'Administrador')")
+    # Tabela de Movimentações
+    cursor.execute('''CREATE TABLE IF NOT EXISTS fluxo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pdv TEXT,
+        loja_origem TEXT,
+        tipo_acao TEXT,
+        detalhes TEXT,
+        foto_pedido BLOB,
+        status TEXT DEFAULT 'Pendente',
+        data_hora TEXT,
+        responsavel TEXT
+    )''')
+    # Tabela de Usuários
+    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+        username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT
+    )''')
+    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Gestor Indústria', 'Administrador')")
     conn.commit()
     return conn
 
 db_conn = init_db()
 
-# --- 3. LOGIN ---
+# --- 2. SISTEMA DE ACESSO ---
 if "auth" not in st.session_state:
     st.session_state["auth"] = False
 
 if not st.session_state["auth"]:
     _, col, _ = st.columns([1, 1.2, 1])
     with col:
-        st.markdown("<h1 style='text-align:center;'>🔐 Acesso Restrito</h1>", unsafe_allow_html=True)
-        with st.form("login_form"):
+        st.markdown("<h2 style='text-align:center;'>🏭 Indústria Integrada</h2>", unsafe_allow_html=True)
+        with st.form("login"):
             u = st.text_input("Usuário")
             p = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", use_container_width=True):
@@ -55,128 +47,124 @@ if not st.session_state["auth"]:
                 if res:
                     st.session_state.update({"auth": True, "user": res[0], "perfil": res[1]})
                     st.rerun()
-                else: st.error("Usuário ou senha incorretos.")
+                else: st.error("Acesso negado.")
     st.stop()
 
-# --- 4. CSS (VISUAL "MARCOS GESTÕES" - ALTO CONTRASTE) ---
+# --- 3. ESTILIZAÇÃO DE ALTO CONTRASTE ---
 st.markdown("""
     <style>
-    /* Estilo do Fundo e Sidebar */
-    .stApp { background-color: #F9FAFB !important; }
-    section[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E5E7EB; }
+    .stApp { background-color: #F8FAFC !important; }
+    h1, h2, h3, p, span, label, td, th { color: #000000 !important; font-weight: 700 !important; }
     
-    /* Força Texto Preto para não sumir no branco */
-    h1, h2, h3, p, span, label, td, th { color: #111827 !important; font-weight: 700 !important; }
-    
-    /* Grid Estilizado */
-    .header-bar { background: #1F2937; color: white !important; padding: 12px; border-radius: 8px 8px 0 0; display: flex; font-size: 11px; text-transform: uppercase; font-weight: 900; }
+    .status-card {
+        padding: 15px; border-radius: 8px; border: 1px solid #000; margin-bottom: 10px; background: white;
+    }
+    .header-bar { background: #1E293B; color: white !important; padding: 10px; border-radius: 5px; display: flex; font-size: 11px; }
     .header-bar div { color: white !important; }
-    
-    /* Badges de Status (Cores Fortes) */
-    .st-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; border: 1px solid #000; font-weight: bold; }
-    .status-inserido { background-color: #DBEAFE; color: #1E40AF !important; }
-    .status-produzindo { background-color: #FEF9C3; color: #854D0E !important; }
-    .status-finalizado { background-color: #DCFCE7; color: #166534 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 5. NAVEGAÇÃO LATERAL ---
+# --- 4. MENU LATERAL ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state['user']}")
-    st.markdown(f"Nível: **{st.session_state['perfil']}**")
+    st.info(f"Acesso: {st.session_state['user_perfil']}")
     
-    menu_items = ["📋 Painel de Produção"]
-    if st.session_state['perfil'] == "Administrador":
-        menu_items.append("👥 Gestão de Equipe")
-    
-    menu = st.radio("Navegação", menu_items)
+    aba = st.radio("Módulos", ["📋 Painel de Controle", "📥 Lançar Solicitação", "👥 Equipe"])
     
     if st.button("Sair"):
         st.session_state["auth"] = False
         st.rerun()
 
-# --- 6. TELA: GESTÃO DE EQUIPE (ADMIN) ---
-if menu == "👥 Gestão de Equipe":
-    st.title("Gerenciar Usuários")
-    with st.form("cad_user"):
-        c1, c2, c3 = st.columns(3)
-        nu = c1.text_input("Login")
-        nn = c2.text_input("Nome")
-        ns = c3.text_input("Senha", type="password")
-        np = st.selectbox("Perfil de Poder", ["Visitante", "Loja", "Moderador", "Administrador"])
-        if st.form_submit_button("Salvar Usuário"):
-            db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", (nu, ns, nn, np))
-            db_conn.commit()
-            st.success("Usuário atualizado com sucesso!")
-
-# --- 7. TELA: PAINEL DE PRODUÇÃO ---
-else:
-    st.title("Controle de Produção")
+# --- 5. TELA: LANÇAMENTO (LOJAS E RESPONSÁVEIS) ---
+if aba == "📥 Lançar Solicitação":
+    st.header("Novo Chamado / Movimentação")
     
-    # Botão Novo Pedido (Só Loja, Moderador ou Admin)
-    if st.session_state['perfil'] != "Visitante":
-        with st.expander("➕ Cadastrar Novo PDV"):
-            with st.form("novo_pdv", clear_on_submit=True):
-                c1, c2, c3 = st.columns(3)
-                f_pdv = c1.text_input("Número PDV")
-                f_loja = c2.text_input("Loja/Cidade", value="Luziânia")
-                f_ret = c3.selectbox("Tipo de Saída", ["Entregar", "Retirar na Indústria", "Retirar na Loja"])
-                f_obs = st.text_area("Observações Adicionais")
-                if st.form_submit_button("Confirmar Lançamento"):
-                    dt = datetime.now().strftime("%d/%m/%y %H:%M")
-                    db_conn.cursor().execute("INSERT OR REPLACE INTO pedidos (id_nota, loja, retirada, obs, data_hora) VALUES (?,?,?,?,?)", (f_pdv, f_loja, f_ret, f_obs, dt))
-                    db_conn.commit()
-                    st.rerun()
+    with st.form("chamado", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        f_pdv = c1.text_input("Número do Pedido / PDV")
+        f_tipo = c2.selectbox("Tipo de Ocorrência", [
+            "Retirada de Material (Indústria)", 
+            "Baixa de Expedição",
+            "Devolução",
+            "Cancelamento",
+            "Retirada na Loja (Alteração)"
+        ])
+        f_obs = st.text_area("Descrição / Detalhes do Estoque")
+        f_foto = st.file_uploader("Foto do Pedido (Obrigatório para Retirada)", type=['png', 'jpg', 'jpeg'])
+        
+        if st.form_submit_button("Enviar para a Indústria", use_container_width=True):
+            if f_pdv and (f_foto or "Retirada" not in f_tipo):
+                foto_bytes = f_foto.read() if f_foto else None
+                dt = datetime.now().strftime("%d/%m %H:%M")
+                db_conn.cursor().execute('''INSERT INTO fluxo 
+                    (pdv, loja_origem, tipo_acao, detalhes, foto_pedido, data_hora, responsavel) 
+                    VALUES (?,?,?,?,?,?,?)''', 
+                    (f_pdv, "Luziânia", f_tipo, f_obs, foto_bytes, dt, st.session_state['user']))
+                db_conn.commit()
+                st.success("Solicitação enviada com sucesso!")
+            else:
+                st.error("Erro: Pedidos de retirada exigem foto do pedido.")
 
-    # Filtro de Busca
-    busca = st.text_input("🔍 Pesquisar por PDV...", placeholder="Digite o número da nota")
-    df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY data_hora DESC", db_conn)
-    if busca: df = df[df['id_nota'].str.contains(busca)]
+# --- 6. TELA: PAINEL DE CONTROLE (VISÃO DA INDÚSTRIA) ---
+elif aba == "📋 Painel de Controle":
+    st.header("Fluxo de Operação - Indústria")
+    
+    busca = st.text_input("🔍 Filtrar por PDV")
+    
+    df = pd.read_sql_query("SELECT * FROM fluxo ORDER BY id DESC", db_conn)
+    if busca:
+        df = df[df['pdv'].str.contains(busca)]
 
-    # Cabeçalho da Tabela
+    # Cabeçalho
     st.markdown("""<div class='header-bar'>
-        <div style='width:15%;'>PDV</div>
-        <div style='width:15%;'>Loja</div>
-        <div style='width:20%;'>Status Atual</div>
-        <div style='width:20%;'>Logística</div>
-        <div style='width:15%;'>OBS</div>
-        <div style='width:15%;'>Ações</div>
+        <div style='width:10%;'>PDV</div>
+        <div style='width:20%;'>Tipo</div>
+        <div style='width:25%;'>Detalhes/Estoque</div>
+        <div style='width:15%;'>Status</div>
+        <div style='width:15%;'>Foto</div>
+        <div style='width:15%;'>Ação</div>
     </div>""", unsafe_allow_html=True)
 
-    # Dados
     for i, r in df.iterrows():
-        c1, c2, c3, c4, c5, c6 = st.columns([0.15, 0.15, 0.20, 0.20, 0.15, 0.15])
+        c1, c2, c3, c4, c5, c6 = st.columns([0.1, 0.2, 0.25, 0.15, 0.15, 0.15])
         
-        c1.markdown(f"**{r['id_nota']}**")
-        c2.write(r['loja'])
-        
-        # Status Dinâmico
-        s = r['status']
-        cl = "status-inserido" if s == 'Inserido' else "status-produzindo" if s == 'Produzindo' else "status-finalizado"
-        c3.markdown(f"<span class='st-badge {cl}'>{s}</span><br><small>{r['data_hora']}</small>", unsafe_allow_html=True)
-        
-        c4.write(r['retirada'])
-        c5.write(r['obs'] if r['obs'] else "-")
-        
-        # Botões por Poder
-        p = st.session_state['perfil']
-        if p == "Visitante":
-            c6.write("🔒")
-        else:
-            if s == 'Inserido':
-                if c6.button("🔨 Produzir", key=f"p_{r['id_nota']}", use_container_width=True):
-                    db_conn.cursor().execute("UPDATE pedidos SET status='Produzindo' WHERE id_nota=?", (r['id_nota'],))
-                    db_conn.commit()
-                    st.rerun()
-            elif s == 'Produzindo':
-                if c6.button("✅ Finalizar", key=f"f_{r['id_nota']}", use_container_width=True):
-                    db_conn.cursor().execute("UPDATE pedidos SET status='Finalizado' WHERE id_nota=?", (r['id_nota'],))
-                    db_conn.commit()
-                    st.rerun()
+        with st.container():
+            c1.write(f"**{r['pdv']}**")
+            c2.write(f"_{r['tipo_acao']}_")
+            c3.write(f"<small>{r['detalhes']}</small>", unsafe_allow_html=True)
             
-            if p in ["Administrador", "Moderador"]:
-                if c6.button("🗑️", key=f"d_{r['id_nota']}", use_container_width=True):
-                    db_conn.cursor().execute("DELETE FROM pedidos WHERE id_nota=?", (r['id_nota'],))
+            # Status
+            cor = "#FEF9C3" if r['status'] == 'Pendente' else "#DCFCE7"
+            c4.markdown(f"<span style='background:{cor}; padding:3px 8px; border-radius:5px; border:1px solid #000; font-size:11px;'>{r['status']}</span>", unsafe_allow_html=True)
+            c4.caption(r['data_hora'])
+            
+            # Foto
+            if r['foto_pedido']:
+                if c5.button("Ver Pedido", key=f"f_{r['id']}"):
+                    st.image(r['foto_pedido'], caption=f"Pedido {r['pdv']}")
+            else:
+                c5.write("Sem foto")
+            
+            # Ações (Só Indústria/Admin)
+            if r['status'] == 'Pendente':
+                if c6.button("Finalizar", key=f"ok_{r['id']}"):
+                    db_conn.cursor().execute("UPDATE fluxo SET status='Concluído' WHERE id=?", (r['id'],))
                     db_conn.commit()
                     st.rerun()
-        st.markdown("<hr style='margin:5px 0; border:0.5px solid #E5E7EB;'>", unsafe_allow_html=True)
+            else:
+                c6.write("✅")
+        st.divider()
+
+# --- 7. TELA: EQUIPE (ADMIN) ---
+elif aba == "👥 Equipe":
+    if st.session_state['user_perfil'] == "Administrador":
+        st.subheader("Cadastro de Funcionários")
+        with st.form("user_reg"):
+            nu = st.text_input("Login")
+            nn = st.text_input("Nome Completo")
+            ns = st.text_input("Senha")
+            np = st.selectbox("Perfil", ["Visitante", "Loja", "Indústria", "Administrador"])
+            if st.form_submit_button("Salvar"):
+                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?,?,?,?)", (nu, ns, nn, np))
+                db_conn.commit()
+                st.success("Usuário registrado.")
