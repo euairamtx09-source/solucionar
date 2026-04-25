@@ -5,9 +5,9 @@ from datetime import datetime
 import base64
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="🚚")
+st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="📑")
 
-# --- 2. BANCO DE DADOS (Atualizado para Categorias) ---
+# --- 2. BANCO DE DADOS ---
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -15,169 +15,171 @@ def init_db():
         CREATE TABLE IF NOT EXISTS pedidos (
             id_nota TEXT PRIMARY KEY,
             vendedor TEXT,
-            endereco TEXT,
+            obs TEXT,
             categoria TEXT,
-            status TEXT DEFAULT 'PENDENTE',
+            status TEXT DEFAULT 'Inserido',
             anexo BLOB,
-            ultima_atualizacao DATETIME
+            data_hora DATETIME
         )
     ''')
-    # Atualização de segurança para colunas novas
-    try: cursor.execute("ALTER TABLE pedidos ADD COLUMN categoria TEXT")
-    except: pass
-    try: cursor.execute("ALTER TABLE pedidos ADD COLUMN anexo BLOB")
-    except: pass
     conn.commit()
     return conn
 
 conn = init_db()
 
-# --- 3. CSS DE ALTO CONTRASTE E CORES POR CATEGORIA ---
+# --- 3. CSS PARA REPLICAR O LAYOUT "MARCOS GESTÕES" ---
 st.markdown("""
     <style>
-    .stApp { background-color: #E5E7EB !important; }
-    h1, h2, h3, p, span, label { color: #000000 !important; font-weight: 800 !important; }
+    /* Estilo do Fundo e Container */
+    .stApp { background-color: #F4F7F6 !important; }
     
+    /* Menu Lateral */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
-        border-right: 3px solid #000000;
-        width: 400px !important;
-    }
-
-    /* Estilização dos Cards baseada em Categorias */
-    .card {
-        background-color: #FFFFFF !important;
-        padding: 20px;
-        border-radius: 10px;
-        border: 3px solid #000000;
-        margin-bottom: 15px;
-        box-shadow: 5px 5px 0px #000000;
+        border-right: 1px solid #E0E0E0;
     }
     
-    .cat-mudanca { border-left: 20px solid #DC2626 !important; } /* Vermelho */
-    .cat-agendamento { border-left: 20px solid #2563EB !important; } /* Azul */
-    .cat-retirada { border-left: 20px solid #D97706 !important; } /* Laranja */
-    .cat-aviso { border-left: 20px solid #6B7280 !important; } /* Cinza */
-
-    .tag {
-        padding: 4px 10px;
-        border-radius: 5px;
-        color: white !important;
-        font-size: 12px;
+    /* Estilização da Tabela */
+    .main-table {
+        width: 100%;
+        background-color: white;
+        border-radius: 10px;
+        border-collapse: collapse;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .main-table th {
+        background-color: #F8F9FA;
+        color: #707070;
+        text-align: left;
+        padding: 15px;
+        border-bottom: 2px solid #F1F1F1;
+        font-size: 13px;
         text-transform: uppercase;
+    }
+    .main-table td {
+        padding: 15px;
+        border-bottom: 1px solid #F1F1F1;
+        color: #333;
+        font-size: 14px;
+    }
+
+    /* Status Tags (Inspirado na imagem) */
+    .status-badge {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: bold;
+        text-align: center;
+        display: inline-block;
+    }
+    .status-inserido { background-color: #E3F2FD; color: #1976D2; }
+    .status-produzindo { background-color: #FFF9C4; color: #FBC02D; }
+    .status-concluido { background-color: #E8F5E9; color: #2E7D32; }
+
+    /* Categoria Tags */
+    .cat-badge {
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        background-color: #F1F1F1;
+        color: #666;
+    }
+
+    /* Botões de Ação */
+    .btn-action {
+        padding: 6px 12px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: bold;
+        margin-right: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. JAVASCRIPT PARA CTRL+V ---
-st.markdown("""
-    <script>
-    const doc = window.parent.document;
-    doc.addEventListener('paste', (event) => {
-        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
-        for (const item of items) {
-            if (item.kind === 'file') {
-                const blob = item.getAsFile();
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const base64String = e.target.result;
-                    const inputs = doc.querySelectorAll('input');
-                    for (let input of inputs) {
-                        if (input.placeholder.includes('Ctrl+V')) {
-                            input.value = base64String;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            break;
-                        }
-                    }
-                };
-                reader.readAsDataURL(blob);
-            }
-        }
-    });
-    </script>
-    """, unsafe_allow_html=True)
-
-# --- 5. INTERFACE ---
-st.title("🚚 ExpedFlow: Painel Categorizado")
-
+# --- 4. BARRA LATERAL (MENU) ---
 with st.sidebar:
-    st.header("📥 Lançar Nova Demanda")
+    st.title("📦 ExpedFlow")
+    menu = st.radio("Navegação", ["Dashboard", "Todos os Pedidos", "Administração"], label_visibility="collapsed")
     
-    # Receptor de Imagem
-    arquivo_upload = st.file_uploader("Arrastar Print", type=['png', 'jpg', 'jpeg'])
-    buffer_colagem = st.text_input("Receptor Ctrl+V", placeholder="Clique e dê Ctrl+V", key="receptor")
-    
-    final_blob = None
-    if arquivo_upload: final_blob = arquivo_upload.read()
-    elif "data:image" in buffer_colagem:
-        final_blob = base64.b64decode(buffer_colagem.split(",")[1])
-        st.success("✅ Print capturado!")
-
     st.divider()
-
-    with st.form("cadastro", clear_on_submit=True):
-        n = st.text_input("Número da Nota")
-        v = st.text_input("Vendedor")
+    st.subheader("➕ Novo Lançamento")
+    with st.form("novo_pedido", clear_on_submit=True):
+        nota = st.text_input("Número da Nota (PDV)")
+        vendedor = st.text_input("Vendedor")
+        categoria = st.selectbox("Categoria", ["Mudança de Endereço", "Agendamento", "Retirada na Indústria", "Aviso Geral"])
+        obs = st.text_area("Observação")
         
-        # O PONTO CHAVE: SELEÇÃO DE CATEGORIA
-        cat = st.selectbox("Tipo de Demanda", [
-            "Mudança de Endereço", 
-            "Agendamento de Entrega", 
-            "Retirada de Material", 
-            "Aviso Geral"
-        ])
+        # Receptor de imagem (Ctrl+V ou Arquivo)
+        img_file = st.file_uploader("Anexar Print", type=['png', 'jpg'])
         
-        e = st.text_area("Detalhes/Observações")
-        
-        if st.form_submit_button("LANÇAR NOTA NO PAINEL"):
-            if n:
+        if st.form_submit_button("Lançar Pedido", use_container_width=True):
+            if nota:
+                blob = img_file.read() if img_file else None
                 conn.cursor().execute(
-                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, categoria, anexo, ultima_atualizacao) VALUES (?,?,?,?,?,?)",
-                    (n, v, e, cat, final_blob, datetime.now())
+                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, obs, categoria, data_hora) VALUES (?,?,?,?,?)",
+                    (nota, vendedor, obs, categoria, datetime.now())
                 )
                 conn.commit()
+                st.success("Pedido Inserido!")
                 st.rerun()
 
-# --- 6. PAINEL DE EXIBIÇÃO ---
-df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
-col_mesa, col_patio = st.columns([2, 1])
+# --- 5. PAINEL PRINCIPAL (LAYOUT DE TABELA) ---
+st.header("Controle de Notas e Expedição")
+st.caption("Gerencie as demandas de entrega e retiradas de forma eficiente")
 
-with col_mesa:
-    st.subheader("📋 Fila de Notas (Infinito)")
-    pendentes = df[df['status'] == 'PENDENTE']
+# Filtros (estilo busca da imagem)
+search_col, filter_col = st.columns([3, 1])
+with search_col:
+    busca = st.text_input("Pesquisar por PDV/Nota...", placeholder="Digite o número da nota...")
+
+# Carregar dados
+query = "SELECT * FROM pedidos ORDER BY data_hora DESC"
+df = pd.read_sql_query(query, conn)
+
+if busca:
+    df = df[df['id_nota'].str.contains(busca)]
+
+# Renderizar Tabela Estilizada
+if not df.empty:
+    # Cabeçalho da Tabela
+    cols = st.columns([1, 1, 1.5, 1.5, 1, 1])
+    headers = ["PDV", "VENDEDOR", "STATUS", "CATEGORIA", "ANEXO", "AÇÕES"]
+    for col, h in zip(cols, headers):
+        col.markdown(f"**{h}**")
     
-    for _, row in pendentes.iterrows():
-        # Define a classe CSS baseada na categoria
-        css_cat = "cat-aviso"
-        cor_tag = "#6B7280"
-        
-        if row['categoria'] == "Mudança de Endereço":
-            css_cat, cor_tag = "cat-mudanca", "#DC2626"
-        elif row['categoria'] == "Agendamento de Entrega":
-            css_cat, cor_tag = "cat-agendamento", "#2563EB"
-        elif row['categoria'] == "Retirada de Material":
-            css_cat, cor_tag = "cat-retirada", "#D97706"
+    st.divider()
 
-        with st.container():
-            st.markdown(f"""
-                <div class="card {css_cat}">
-                    <span class="tag" style="background-color: {cor_tag};">{row['categoria']}</span>
-                    <p style="margin-top:10px; font-size:14px;">Vendedor: {row['vendedor']}</p>
-                    <h2 style="margin:0;">Nota #{row['id_nota']}</h2>
-                    <p style="font-size:18px; margin-top:10px; background:#f9f9f9; padding:10px; border-radius:5px;">{row['endereco']}</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            if row['anexo']:
-                with st.expander("🖼️ Ver Print"):
-                    st.image(row['anexo'])
-            
-            if st.button(f"CONCLUIR NOTA {row['id_nota']}", key=f"btn_{row['id_nota']}"):
-                conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
+    for i, row in df.iterrows():
+        c1, c2, c3, c4, c5, c6 = st.columns([1, 1, 1.5, 1.5, 1, 1])
+        
+        c1.write(f"**{row['id_nota']}**")
+        c2.write(row['vendedor'])
+        
+        # Badge de Status
+        status_class = "status-inserido" if row['status'] == 'Inserido' else "status-concluido"
+        c3.markdown(f'<span class="status-badge {status_class}">{row['status']}<br><small>{row['data_hora'][:16]}</small></span>', unsafe_allow_html=True)
+        
+        # Badge de Categoria
+        c4.markdown(f'<span class="cat-badge">{row['categoria']}</span>', unsafe_allow_html=True)
+        
+        # Anexo
+        if row['anexo']:
+            c5.button("👁️ Ver", key=f"img_{row['id_nota']}")
+        else:
+            c5.write("-")
+        
+        # Botões de Ação
+        if row['status'] == 'Inserido':
+            if c6.button("✅ Concluir", key=f"done_{row['id_nota']}"):
+                conn.cursor().execute("UPDATE pedidos SET status = 'Finalizado' WHERE id_nota = ?", (row['id_nota'],))
                 conn.commit()
                 st.rerun()
-
-with col_patio:
-    st.subheader("✅ Histórico (Hoje)")
-    concluidos = df[df['status'] == 'CONCLUIDO']
-    st.dataframe(concluidos[['id_nota', 'vendedor', 'categoria']], use_container_width=True)
+        else:
+            if c6.button("🗑️ Excluir", key=f"del_{row['id_nota']}"):
+                conn.cursor().execute("DELETE FROM pedidos WHERE id_nota = ?", (row['id_nota'],))
+                conn.commit()
+                st.rerun()
+else:
+    st.info("Nenhum pedido encontrado.")
