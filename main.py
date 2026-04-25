@@ -7,10 +7,11 @@ import base64
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="ExpedFlow Pro", page_icon="🚚")
 
-# --- BANCO DE DADOS ---
+# --- BANCO DE DADOS (Com correção para KeyError) ---
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
     cursor = conn.cursor()
+    # Criar tabela se não existir
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS pedidos (
             id_nota TEXT PRIMARY KEY,
@@ -21,13 +22,18 @@ def init_db():
             ultima_atualizacao DATETIME
         )
     ''')
+    # Tenta adicionar a coluna anexo caso o banco seja antigo
+    try:
+        cursor.execute("ALTER TABLE pedidos ADD COLUMN anexo BLOB")
+    except:
+        pass # Coluna já existe
     conn.commit()
     return conn
 
 conn = init_db()
 
-# --- JAVASCRIPT PARA CAPTURAR CTRL+V ---
-# Este script escuta o evento de 'paste' e injeta a imagem no chat_input invisível
+# --- MÁGICA DO CTRL + V (JavaScript) ---
+# Esse script captura o evento de colar e joga o dado para um componente do Streamlit
 st.markdown("""
     <script>
     const doc = window.parent.document;
@@ -37,9 +43,9 @@ st.markdown("""
             if (item.kind === 'file') {
                 const blob = item.getAsFile();
                 const reader = new FileReader();
-                reader.onload = function(event) {
-                    const base64String = event.target.result;
-                    // Envia a string da imagem para o Streamlit
+                reader.onload = function(e) {
+                    const base64String = e.target.result;
+                    // Encontra o input de texto do Streamlit para injetar o valor ou usa o postMessage
                     window.parent.postMessage({
                         type: 'streamlit:set_component_value',
                         value: base64String
@@ -52,7 +58,7 @@ st.markdown("""
     </script>
     """, unsafe_allow_html=True)
 
-# --- CSS DE ALTO CONTRASTE ---
+# --- ESTILO DE ALTO CONTRASTE ---
 st.markdown("""
     <style>
     .stApp { background-color: #F3F4F6 !important; }
@@ -69,84 +75,68 @@ st.markdown("""
     .pedido-alerta { border-left: 12px solid #DC2626 !important; background-color: #FEF2F2 !important; }
     section[data-testid="stSidebar"] { background-color: #111827 !important; width: 400px !important; }
     section[data-testid="stSidebar"] * { color: white !important; }
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; height: 3em; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚚 ExpedFlow: Painel Operacional")
 
-# --- BARRA LATERAL: ÁREA DE ENTRADA ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("📥 Entrada de Dados")
     
-    # Campo "Receptor" de imagens coladas (Ctrl+V)
-    # Ele fica no topo para você ver que o print entrou
-    print_colado = st.chat_input("Dê Ctrl+V aqui para anexar print")
+    # Este campo captura o Base64 enviado pelo JavaScript acima
+    colagem_data = st.text_input("Status do Print:", placeholder="Aguardando Ctrl+V...", key="buffer_colagem")
     
-    if print_colado:
-        st.success("✅ Imagem detectada! Preencha a nota e salve.")
+    if "data:image" in colagem_data:
+        st.success("✅ Imagem capturada!")
+        with st.expander("Prévia do Print"):
+            st.image(colagem_data)
     
     st.divider()
     
-    # Formulário de Cadastro
-    with st.form("cadastro_nota", clear_on_submit=True):
-        n = st.text_input("Número da NF")
+    with st.form("cadastro_agil", clear_on_submit=True):
+        n = st.text_input("Número da Nota")
         v = st.text_input("Vendedor")
-        e = st.text_area("Observações / Mudança de Endereço")
+        e = st.text_area("Observações / Mudanças")
         
-        btn_salvar = st.form_submit_button("LANÇAR NO SISTEMA")
+        btn = st.form_submit_button("LANÇAR NO SISTEMA")
         
-        if btn_salvar and n:
-            # Lógica para converter a imagem colada (Base64) em Bytes para o banco
-            img_byte = None
-            if print_colado and "data:image" in print_colado:
-                try:
-                    img_byte = base64.b64decode(print_colado.split(",")[1])
-                except:
-                    img_byte = None
+        if btn and n:
+            img_blob = None
+            if "data:image" in colagem_data:
+                img_blob = base64.b64decode(colagem_data.split(",")[1])
+            
+            conn.cursor().execute(
+                "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, status, ultima_atualizacao) VALUES (?,?,?,?,?,?)",
+                (n, v, e, img_blob, 'PENDENTE', datetime.now())
+            )
+            conn.commit()
+            st.success("Salvo!")
+            st.rerun()
 
-            try:
-                conn.cursor().execute(
-                    "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, endereco, anexo, ultima_atualizacao) VALUES (?,?,?,?,?)",
-                    (n, v, e, img_byte, datetime.now())
-                )
-                conn.commit()
-                st.success(f"Nota {n} registrada!")
-                st.rerun()
-            except Exception as ex:
-                st.error(f"Erro ao salvar: {ex}")
-
-# --- CORPO DO SISTEMA ---
+# --- EXIBIÇÃO ---
 df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY ultima_atualizacao DESC", conn)
 col_mesa, col_patio = st.columns([1.5, 1])
 
 with col_mesa:
     st.header("⏳ Notas na Mesa")
     pendentes = df[df['status'] == 'PENDENTE']
-    
     for _, row in pendentes.iterrows():
-        is_alerta = any(word in row['endereco'].lower() for word in ['mudar', 'urgente', 'trocar', 'atenção'])
+        is_alerta = any(w in str(row['endereco']).lower() for w in ['mudar', 'urgente', 'trocar'])
         estilo = "pedido-alerta" if is_alerta else ""
-        
         with st.container():
-            st.markdown(f"""
-                <div class="pedido-card {estilo}">
-                    <p style='color: #1E40AF !important; font-size: 12px;'>Vendedor: {row['vendedor']}</p>
-                    <h2 style='margin: 0;'>Nota #{row['id_nota']}</h2>
-                    <p style='margin-top: 10px;'>{row['endereco']}</p>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="pedido-card {estilo}"><p>Vendedor: {row["vendedor"]}</p><h2 style="margin:0">Nota #{row["id_nota"]}</h2><p>{row["endereco"]}</p></div>', unsafe_allow_html=True)
             
             if row['anexo']:
                 with st.expander("🖼️ Ver Print Anexado"):
                     st.image(row['anexo'])
             
-            if st.button(f"CONCLUIR CARGA #{row['id_nota']}", key=f"btn_{row['id_nota']}"):
+            if st.button(f"CONCLUIR #{row['id_nota']}", key=f"c_{row['id_nota']}"):
                 conn.cursor().execute("UPDATE pedidos SET status = 'CONCLUIDO' WHERE id_nota = ?", (row['id_nota'],))
                 conn.commit()
                 st.rerun()
 
 with col_patio:
     st.header("✅ Concluídas")
-    concluidos = df[df['status'] == 'CONCLUIDO']
-    st.table(concluidos[['id_nota', 'vendedor']].head(15))
+    st.table(df[df['status'] == 'CONCLUIDO'][['id_nota', 'vendedor']].head(10))
