@@ -3,8 +3,8 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
-# --- 1. CONFIGURAÇÃO E SEGURANÇA ---
-st.set_page_config(layout="wide", page_title="ExpedFlow Multi-User", page_icon="👥")
+# --- 1. CONFIGURAÇÃO DE SEGURANÇA ---
+st.set_page_config(layout="wide", page_title="ExpedFlow Multi-Nível", page_icon="🔐")
 
 def init_db():
     conn = sqlite3.connect('expedicao.db', check_same_thread=False)
@@ -17,20 +17,20 @@ def init_db():
             anexo BLOB, data_hora TEXT
         )
     ''')
-    # Tabela de Usuários
+    # Tabela de Usuários com campo de PERFIL
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
-            username TEXT PRIMARY KEY, password TEXT, nome TEXT
+            username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT
         )
     ''')
-    # Criar usuário admin padrão se não existir
-    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Administrador')")
+    # Admin padrão
+    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Administrador Master', 'Administrador')")
     conn.commit()
     return conn
 
 db_conn = init_db()
 
-# --- 2. SISTEMA DE LOGIN ---
+# --- 2. LÓGICA DE AUTENTICAÇÃO ---
 def login_screen():
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
@@ -39,26 +39,26 @@ def login_screen():
         col1, col2, col3 = st.columns([1, 1.5, 1])
         with col2:
             st.markdown("""
-                <div style='text-align: center; padding: 30px; background: white; border-radius: 10px; border: 3px solid #000; box-shadow: 8px 8px 0px #000;'>
-                    <h1 style='color: #000;'>🚚 EXPEDFLOW LOGIN</h1>
-                    <p style='color: #333;'>Entre com suas credenciais para continuar</p>
+                <div style='text-align: center; padding: 25px; background: #1E293B; border-radius: 10px; border: 2px solid #000;'>
+                    <h1 style='color: #FFFFFF !important;'>🛡️ ACESSO RESTRITO</h1>
+                    <p style='color: #CBD5E1 !important;'>ExpedFlow Enterprise v4.0</p>
                 </div>
             """, unsafe_allow_html=True)
             
-            user = st.text_input("Usuário")
-            password = st.text_input("Senha", type="password")
-            
-            if st.button("ACESSAR SISTEMA", use_container_width=True):
-                res = db_conn.cursor().execute(
-                    "SELECT nome FROM usuarios WHERE username = ? AND password = ?", (user, password)
-                ).fetchone()
-                if res:
-                    st.session_state["logged_in"] = True
-                    st.session_state["user_name"] = res[0]
-                    st.session_state["is_admin"] = (user == 'admin')
-                    st.rerun()
-                else:
-                    st.error("Usuário ou senha inválidos.")
+            with st.form("login_form"):
+                u = st.text_input("Usuário")
+                p = st.text_input("Senha", type="password")
+                if st.form_submit_button("ENTRAR NO SISTEMA", use_container_width=True):
+                    res = db_conn.cursor().execute(
+                        "SELECT nome, perfil FROM usuarios WHERE username = ? AND password = ?", (u, p)
+                    ).fetchone()
+                    if res:
+                        st.session_state["logged_in"] = True
+                        st.session_state["user_name"] = res[0]
+                        st.session_state["user_perfil"] = res[1]
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas.")
         st.stop()
 
 login_screen()
@@ -67,125 +67,139 @@ login_screen()
 st.markdown("""
     <style>
     .stApp { background-color: #F8FAFC !important; }
-    h1, h2, h3, p, span, label, td, th { color: #000000 !important; font-weight: 700 !important; }
+    /* Força texto preto real para não apagar */
+    h1, h2, h3, p, span, label, td, th, b { color: #000000 !important; font-weight: 800 !important; }
     
-    /* Cabeçalho Escuro */
     .table-head {
-        background-color: #000000;
+        background-color: #0F172A;
         padding: 12px;
         color: white !important;
         display: flex;
         justify-content: space-between;
-        border-radius: 5px 5px 0 0;
+        border-radius: 4px;
     }
-    .head-txt { color: #FFFFFF !important; font-size: 11px; text-transform: uppercase; }
-
-    /* Estilo Lateral */
-    section[data-testid="stSidebar"] {
-        background-color: #FFFFFF !important;
-        border-right: 2px solid #000;
-    }
+    .head-txt { color: #FFFFFF !important; font-size: 11px; text-transform: uppercase; font-weight: 900; }
+    
+    section[data-testid="stSidebar"] { border-right: 3px solid #000; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. MENU LATERAL E GESTÃO DE USUÁRIOS ---
+# --- 4. BARRA LATERAL (MENU DINÂMICO) ---
 with st.sidebar:
-    st.markdown(f"👤 **Olá, {st.session_state['user_name']}**")
-    menu = st.radio("Navegação", ["📦 Painel de Notas", "⚙️ Gerenciar Usuários"])
+    st.markdown(f"### 👤 {st.session_state['user_name']}")
+    st.markdown(f"🏅 Nível: **{st.session_state['user_perfil']}**")
     
-    if st.button("Sair"):
+    opcoes_menu = ["📦 Painel de Notas"]
+    if st.session_state['user_perfil'] == "Administrador":
+        opcoes_menu.append("⚙️ Gestão de Usuários")
+    
+    menu = st.radio("Navegação", opcoes_menu)
+    
+    if st.button("🚪 Sair do Sistema", use_container_width=True):
         st.session_state["logged_in"] = False
         st.rerun()
 
-# --- 5. TELA: GERENCIAR USUÁRIOS ---
+# --- 5. TELA: GESTÃO DE USUÁRIOS (SÓ ADMIN) ---
 if menu == "⚙️ Gerenciar Usuários":
-    st.header("👥 Gestão de Acessos")
+    st.header("👥 Configuração de Hierarquia")
     
-    if not st.session_state["is_admin"]:
-        st.warning("Apenas o administrador pode gerenciar usuários.")
-    else:
-        with st.form("novo_usuario"):
-            st.subheader("Cadastrar Novo Usuário")
-            new_u = st.text_input("Username (Login)")
-            new_n = st.text_input("Nome Completo")
-            new_p = st.text_input("Senha", type="password")
-            if st.form_submit_button("CRIAR USUÁRIO"):
-                if new_u and new_p:
-                    db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?, ?, ?)", (new_u, new_p, new_n))
-                    db_conn.commit()
-                    st.success("Usuário criado!")
-                else:
-                    st.error("Preencha todos os campos.")
+    with st.form("add_user"):
+        st.subheader("Novo Usuário")
+        col_u, col_n = st.columns(2)
+        u_login = col_u.text_input("Username")
+        u_nome = col_n.text_input("Nome Completo")
+        
+        col_s, col_p = st.columns(2)
+        u_senha = col_s.text_input("Senha", type="password")
+        u_perfil = col_p.selectbox("Nível de Poder", ["Visitante", "Loja", "Moderador", "Administrador"])
+        
+        if st.form_submit_button("CADASTRAR USUÁRIO"):
+            if u_login and u_senha:
+                db_conn.cursor().execute("INSERT OR REPLACE INTO usuarios VALUES (?, ?, ?, ?)", 
+                                       (u_login, u_senha, u_nome, u_perfil))
+                db_conn.commit()
+                st.success(f"Usuário {u_nome} criado como {u_perfil}!")
+            else:
+                st.error("Preencha todos os campos obrigatórios.")
 
-        st.divider()
-        st.subheader("Usuários Ativos")
-        users_df = pd.read_sql_query("SELECT username, nome FROM usuarios", db_conn)
-        st.table(users_df)
+    st.divider()
+    st.subheader("Lista de Acessos Ativos")
+    usuarios_df = pd.read_sql_query("SELECT username, nome, perfil FROM usuarios", db_conn)
+    st.dataframe(usuarios_df, use_container_width=True)
 
-# --- 6. TELA: PAINEL DE NOTAS (O SISTEMA PRINCIPAL) ---
+# --- 6. TELA: PAINEL DE NOTAS (COM PERMISSÕES) ---
 elif menu == "📦 Painel de Notas":
-    st.header("🚚 Controle de Expedição")
+    st.header("📋 Controle de Saída")
     
-    # Barra lateral de lançamento (apenas se for painel de notas)
-    with st.sidebar:
-        st.divider()
-        st.subheader("📥 Lançar Nota")
-        with st.form("lançamento", clear_on_submit=True):
-            f_nota = st.text_input("Número da Nota")
-            f_vend = st.text_input("Vendedor")
-            f_cat = st.selectbox("Categoria", ["Mudança de Endereço", "Agendamento", "Retirada", "Aviso"])
-            f_obs = st.text_area("Observação")
-            if st.form_submit_button("LANÇAR AGORA"):
-                if f_nota:
-                    dt = datetime.now().strftime("%d/%m %H:%M")
-                    db_conn.cursor().execute(
-                        "INSERT OR REPLACE INTO pedidos (id_nota, vendedor, obs, categoria, data_hora) VALUES (?,?,?,?,?)",
-                        (f_nota, f_vend, f_obs, f_cat, dt)
-                    )
-                    db_conn.commit()
-                    st.rerun()
+    # PERMISSÃO DE LANÇAMENTO (Só Admin, Moderador ou Loja)
+    if st.session_state['user_perfil'] in ["Administrador", "Moderador", "Loja"]:
+        with st.sidebar:
+            st.divider()
+            st.subheader("📥 Lançar Novo Pedido")
+            with st.form("lança", clear_on_submit=True):
+                n = st.text_input("PDV / Nota")
+                v = st.text_input("Vendedor", value=st.session_state['user_name'])
+                c = st.selectbox("Categoria", ["Retirada", "Agendamento", "Mudança End.", "Aviso"])
+                o = st.text_area("Observação")
+                if st.form_submit_button("REGISTRAR"):
+                    if n:
+                        dt = datetime.now().strftime("%d/%m %H:%M")
+                        db_conn.cursor().execute("INSERT OR REPLACE INTO pedidos (id_nota, vendedor, obs, categoria, data_hora) VALUES (?,?,?,?,?)", (n, v, o, c, dt))
+                        db_conn.commit()
+                        st.rerun()
+    else:
+        st.sidebar.info("🚫 Seu perfil (Visitante) não permite lançamentos.")
 
-    # Filtro de Busca
-    busca = st.text_input("🔍 Buscar Nota...")
+    # GRID DE DADOS
+    busca = st.text_input("🔍 Localizar Nota...")
     df = pd.read_sql_query("SELECT * FROM pedidos ORDER BY data_hora DESC", db_conn)
-    if busca:
-        df = df[df['id_nota'].str.contains(busca)]
+    if busca: df = df[df['id_nota'].str.contains(busca)]
 
-    # Cabeçalho do Grid
+    # Cabeçalho do Grid (Estilo Industrial)
     st.markdown("""
         <div class="table-head">
-            <div style="width: 15%;" class="head-txt">Nota</div>
+            <div style="width: 15%;" class="head-txt">PDV</div>
             <div style="width: 20%;" class="head-txt">Vendedor</div>
             <div style="width: 20%;" class="head-txt">Status</div>
-            <div style="width: 30%;" class="header-item head-txt">Categoria / Obs</div>
-            <div style="width: 15%;" class="head-txt">Ação</div>
+            <div style="width: 30%;" class="head-txt">Categoria / Detalhes</div>
+            <div style="width: 15%;" class="head-txt">Ações</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # Linhas de Dados
     for i, row in df.iterrows():
         c1, c2, c3, c4, c5 = st.columns([0.15, 0.20, 0.20, 0.30, 0.15])
+        
         with st.container():
             c1.markdown(f"**{row['id_nota']}**")
             c2.write(row['vendedor'])
             
-            # Badge Status
-            cor = "#DBEAFE" if row['status'] == 'Inserido' else "#DCFCE7"
-            txt = "#1E40AF" if row['status'] == 'Inserido' else "#166534"
-            c3.markdown(f'<span style="background:{cor}; color:{txt}; padding:4px 10px; border-radius:5px; border:1px solid {txt}; font-size:11px;">{row["status"]}</span>', unsafe_allow_html=True)
-            c3.markdown(f'<small>{row["data_hora"]}</small>', unsafe_allow_html=True)
+            # Status Badge
+            cor_bg = "#DBEAFE" if row['status'] == 'Inserido' else "#DCFCE7"
+            cor_tx = "#1E40AF" if row['status'] == 'Inserido' else "#166534"
+            c3.markdown(f'<span style="background:{cor_bg}; color:{cor_tx}; padding:3px 8px; border-radius:5px; border:1px solid {cor_tx}; font-size:11px;">{row["status"]}</span><br><small>{row["data_hora"]}</small>', unsafe_allow_html=True)
             
             c4.markdown(f"**{row['categoria']}**")
-            c4.markdown(f"<small style='font-weight:normal;'>{row['obs']}</small>", unsafe_allow_html=True)
+            c4.markdown(f"<small>{row['obs']}</small>", unsafe_allow_html=True)
             
-            if row['status'] == 'Inserido':
-                if c5.button("✅ Concluir", key=f"fin_{row['id_nota']}", use_container_width=True):
-                    db_conn.cursor().execute("UPDATE pedidos SET status = 'Finalizado' WHERE id_nota = ?", (row['id_nota'],))
-                    db_conn.commit()
-                    st.rerun()
+            # LÓGICA DE AÇÕES POR PODER
+            perfil = st.session_state['user_perfil']
+            
+            if perfil == "Visitante":
+                c5.write("🔒 Somente Leitura")
             else:
-                if c5.button("🗑️ Apagar", key=f"del_{row['id_nota']}", use_container_width=True):
-                    db_conn.cursor().execute("DELETE FROM pedidos WHERE id_nota = ?", (row['id_nota'],))
-                    db_conn.commit()
-                    st.rerun()
+                if row['status'] == 'Inserido':
+                    if c5.button("✅ Concluir", key=f"f_{row['id_nota']}", use_container_width=True):
+                        db_conn.cursor().execute("UPDATE pedidos SET status = 'Finalizado' WHERE id_nota = ?", (row['id_nota'],))
+                        db_conn.commit()
+                        st.rerun()
+                else:
+                    # Apenas Admin e Moderador podem APAGAR registros
+                    if perfil in ["Administrador", "Moderador"]:
+                        if c5.button("🗑️ Apagar", key=f"d_{row['id_nota']}", use_container_width=True):
+                            db_conn.cursor().execute("DELETE FROM pedidos WHERE id_nota = ?", (row['id_nota'],))
+                            db_conn.commit()
+                            st.rerun()
+                    else:
+                        c5.write("🏁 Finalizado")
+        
         st.markdown("<hr style='margin:0; border-top: 1px solid #000;'>", unsafe_allow_html=True)
