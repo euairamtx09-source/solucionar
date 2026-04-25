@@ -1,141 +1,212 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ProducTech V20 | Enterprise Edition</title>
-    
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+import streamlit as st
+import sqlite3
+import pandas as pd
+from datetime import datetime
+
+# --- 1. CONFIGURAÇÃO E PROTEÇÃO DE SESSÃO (SESSION GUARD) ---
+st.set_page_config(layout="wide", page_title="Marcos Gestões | ExpedFlow", page_icon="🟢")
+
+if "auth" not in st.session_state:
+    st.session_state["auth"] = False
+if "user_perfil" not in st.session_state:
+    st.session_state["user_perfil"] = "Operador"
+if "user_name" not in st.session_state:
+    st.session_state["user_name"] = "Convidado"
+
+# --- 2. MOTOR DE DADOS ---
+def init_db():
+    conn = sqlite3.connect('expedflow_v25.db', check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS fluxo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, pdv TEXT, loja TEXT, tipo TEXT, 
+        detalhes TEXT, status TEXT DEFAULT 'Pendente', data TEXT, usuario TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+        username TEXT PRIMARY KEY, password TEXT, nome TEXT, perfil TEXT)''')
+    cursor.execute("INSERT OR IGNORE INTO usuarios VALUES ('admin', 'admin123', 'Marcos Admin', 'Administrador')")
+    conn.commit()
+    return conn
+
+db_conn = init_db()
+
+# --- 3. CSS DESIGN (ESTILO MODERNO & RESTRITO) ---
+# O uso de strings triplas f""" evita o SyntaxError: invalid decimal literal
+st.markdown(f"""
     <style>
-        :root {
-            --brand: #10b981; /* Verde conforme solicitado antes */
-            --brand-soft: rgba(16, 185, 129, 0.1);
-            --dark: #0f172a;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --bg: #f8fafc;
-            --card: #ffffff;
-            --text-main: #1e293b;
-            --text-sub: #64748b;
-            --radius: 14px;
-            --shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
-        }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    
+    * {{ font-family: 'Inter', sans-serif; }}
+    
+    .stApp {{ background-color: #F8FAFC !important; }}
+    
+    /* Cabeçalho da Tabela */
+    .table-header {{
+        background-color: #1E293B;
+        color: white !important;
+        padding: 15px;
+        border-radius: 10px 10px 0 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 2fr 1fr;
+        font-weight: 600;
+        font-size: 13px;
+    }}
 
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
-        body { background: var(--bg); color: var(--text-main); display: flex; min-height: 100vh; overflow: hidden; }
+    /* Botão Novo Pedido (Verde) */
+    div.stButton > button:first-child {{
+        background-color: #10B981 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+    }}
 
-        /* Sidebar */
-        nav {
-            width: 280px; background: var(--dark); color: white; padding: 2rem 1.2rem;
-            display: flex; flex-direction: column; position: relative; height: 100vh;
-            transition: 0.3s; z-index: 1000;
-        }
-        .logo-area { display: flex; align-items: center; gap: 12px; margin-bottom: 2.5rem; padding: 0 10px; }
-        .logo-area i { font-size: 1.8rem; color: var(--brand); }
-        .logo-area h2 { font-weight: 800; font-size: 1.3rem; letter-spacing: -0.5px; color: white; }
-
-        nav button {
-            background: none; border: none; color: #94a3b8; padding: 14px 16px; text-align: left;
-            cursor: pointer; border-radius: var(--radius); margin-bottom: 8px; font-weight: 600;
-            display: flex; align-items: center; gap: 14px; transition: 0.2s; font-size: 0.95rem;
-        }
-        nav button:hover { background: rgba(255,255,255,0.05); color: white; }
-        nav button.active { background: var(--brand); color: white; box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.4); }
-
-        /* Área Principal */
-        main { flex: 1; padding: 2.5rem; overflow-y: auto; height: 100vh; }
-        .section-title { margin-bottom: 2rem; }
-        .section-title h1 { font-size: 1.8rem; font-weight: 800; color: var(--dark); }
-
-        /* Cards */
-        .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem; }
-        .card { background: var(--card); border-radius: var(--radius); padding: 1.5rem; border: 1px solid #eef2f6; box-shadow: var(--shadow); }
-        
-        .stat-card { display: flex; align-items: center; gap: 1rem; }
-        .stat-icon { width: 54px; height: 54px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
-
-        /* Tabelas */
-        .table-wrap { overflow-x: auto; margin-top: 1.5rem; border-radius: 12px; border: 1px solid #eef2f6; background: white; }
-        table { width: 100%; border-collapse: collapse; min-width: 800px; }
-        th { background: #f8fafc; padding: 16px; text-align: left; font-size: 0.75rem; font-weight: 800; color: var(--text-sub); border-bottom: 2px solid #f1f5f9; }
-        td { padding: 16px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
-
-        /* Forms */
-        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; align-items: end; }
-        .group { display: flex; flex-direction: column; gap: 4px; }
-        label { font-size: 0.7rem; font-weight: 700; color: var(--text-sub); text-transform: uppercase; }
-        input, select { padding: 10px; border-radius: 8px; border: 1px solid #ddd; outline: none; }
-        
-        .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
-        .btn-primary { background: var(--brand); color: white; }
-        .btn-danger { background: var(--danger); color: white; }
-
-        /* Modal */
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
-        .modal-content { background: white; width: 100%; max-width: 800px; border-radius: 15px; padding: 2rem; max-height: 90vh; overflow-y: auto; }
-
-        .hidden { display: none; }
+    /* Cards */
+    .metric-card {{
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #E2E8F0;
+        text-align: center;
+    }}
+    
+    /* Esconder erros técnicos do usuário final */
+    .stException {{ display: none; }}
     </style>
-</head>
-<body>
+""", unsafe_allow_html=True)
 
-    <nav>
-        <div class="logo-area"><i class="fas fa-microchip"></i> <h2>PRODUC TECH</h2></div>
-        <button onclick="tab('dash')" id="m-dash" class="active"><i class="fas fa-chart-line"></i> <span>Dashboard</span></button>
-        <button onclick="tab('prod')" id="m-prod"><i class="fas fa-clipboard-list"></i> <span>Produção</span></button>
-        <button onclick="tab('relat')" id="m-relat"><i class="fas fa-file-pdf"></i> <span>Relatórios</span></button>
-        <button onclick="tab('func')" id="m-func"><i class="fas fa-users"></i> <span>Equipe</span></button>
-        <button onclick="tab('serv')" id="m-serv"><i class="fas fa-tag"></i> <span>Preços</span></button>
-    </nav>
+# --- 4. TELA DE LOGIN ---
+if not st.session_state["auth"]:
+    _, col, _ = st.columns([1, 1, 1])
+    with col:
+        st.markdown("<h2 style='text-align: center;'>Marcos Gestões</h2>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            u = st.text_input("Usuário")
+            p = st.text_input("Senha", type="password")
+            if st.form_submit_button("ENTRAR NO SISTEMA", use_container_width=True):
+                user_data = db_conn.cursor().execute("SELECT nome, perfil FROM usuarios WHERE username=? AND password=?", (u,p)).fetchone()
+                if user_data:
+                    st.session_state["auth"] = True
+                    st.session_state["user_name"] = user_data[0]
+                    st.session_state["user_perfil"] = user_data[1]
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos.")
+    st.stop()
 
-    <main>
-        <section id="sec-dash">
-            <div class="section-title"><h1>Dashboard Executivo</h1></div>
-            <div class="grid-stats">
-                <div class="card stat-card"><div class="stat-icon" style="background:var(--brand-soft); color:var(--brand)"><i class="fas fa-box"></i></div><div><label>Qtd Total</label><h2 id="st-qtd">0</h2></div></div>
-                <div class="card stat-card"><div class="stat-icon" style="background:#dcfce7; color:var(--success)"><i class="fas fa-coins"></i></div><div><label>Faturamento</label><h2 id="st-val">R$ 0,00</h2></div></div>
-            </div>
-            <div class="card"><canvas id="chartProd" style="max-height: 300px;"></canvas></div>
-        </section>
+# --- 5. SIDEBAR ---
+with st.sidebar:
+    st.markdown("### 🟢 ExpedFlow")
+    menu = st.radio("NAVEGAÇÃO", ["📋 Painel de Carga", "📊 Dashboard", "⚙️ Configurações"])
+    
+    st.markdown("---")
+    st.markdown(f"**Usuário:** {st.session_state['user_name']}")
+    st.caption(f"Perfil: {st.session_state['user_perfil']}")
+    
+    if st.button("Logout", use_container_width=True):
+        st.session_state["auth"] = False
+        st.rerun()
 
-        <section id="sec-prod" class="hidden">
-            <div class="section-title"><h1>Produção Diária</h1></div>
-            <div class="card">
-                <form id="f-prod" class="form-grid">
-                    <input type="hidden" id="edit-prod-id">
-                    <div class="group"><label>Data</label><input type="date" id="p-date" required></div>
-                    <div class="group"><label>Funcionário</label><select id="p-func" required></select></div>
-                    <div class="group"><label>Serviço</label><select id="p-serv" required></select></div>
-                    <div class="group"><label>Quantidade</label><input type="number" id="p-qtd" required></div>
-                    <button type="submit" class="btn btn-primary">Lançar</button>
-                </form>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Data</th><th>Nome</th><th>Serviço</th><th>Qtd</th><th>Total</th><th>Ações</th></tr></thead>
-                    <tbody id="l-prod"></tbody>
-                </table>
-            </div>
-        </section>
+# --- 6. PAINEL DE CARGA (INTEGRADO COM NOVO PEDIDO) ---
+if menu == "📋 Painel de Carga":
+    st.title("Painel de Carga")
 
-        <section id="sec-relat" class="hidden">
-            <div class="section-title"><h1>Gerar Extrato</h1></div>
-            <div class="card" style="max-width: 400px;">
-                <label>Selecionar Colaborador</label>
-                <select id="s-func" style="width: 100%; margin: 10px 0;"></select>
-                <button class="btn btn-primary" onclick="openDoc()" style="width: 100%;">Visualizar PDF</button>
-            </div>
-        </section>
+    # Layout Superior: Busca e Botão Novo
+    col_busca, col_vazio, col_btn = st.columns([3, 3, 2])
+    busca = col_busca.text_input("🔍 Buscar PDV...", placeholder="Digite o número do PDV...")
+    
+    # Botão que expande o formulário de novo pedido
+    with col_btn:
+        novo_pedido_expander = st.expander("➕ NOVO PEDIDO", expanded=False)
 
-        <section id="sec-func" class="hidden">
-            <div class="section-title"><h1>Equipe</h1></div>
-            <div class="card">
-                <form id="f-func" class="form-grid">
-                    <input type="hidden" id="id-func">
-                    <div class="group"><label>Nome</label><input type="text" id="fn-nome" required></div>
-                    <div class="group"><label>Cargo</label><input type="text" id="fn
+    with novo_pedido_expander:
+        with st.form("form_novo_pedido", clear_on_submit=True):
+            st.subheader("Registrar Movimentação")
+            c1, c2 = st.columns(2)
+            f_pdv = c1.text_input("Número do PDV")
+            f_loja = c2.selectbox("Origem/Loja", ["Luziânia", "Jardim Ingá", "Indústria", "Valparaíso"])
+            f_tipo = st.selectbox("O que deve ser feito?", ["Retirar na Indústria", "Entrega Pendente", "Retirada na Loja", "Troca"])
+            f_obs = st.text_area("Observações e Detalhes")
+            
+            if st.form_submit_button("SALVAR PEDIDO", use_container_width=True):
+                if f_pdv:
+                    data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    db_conn.cursor().execute(
+                        "INSERT INTO fluxo (pdv, loja, tipo, detalhes, data, usuario) VALUES (?,?,?,?,?,?)",
+                        (f_pdv, f_loja, f_tipo, f_obs, data_hora, st.session_state['user_name'])
+                    )
+                    db_conn.commit()
+                    st.success(f"PDV {f_pdv} inserido com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("O campo PDV é obrigatório.")
+
+    st.markdown("---")
+
+    # Cabeçalho Estilizado da Tabela
+    st.markdown("""
+        <div class="table-header">
+            <div>PDV</div>
+            <div>LOJA</div>
+            <div>STATUS</div>
+            <div>DETALHES</div>
+            <div style="text-align: right;">AÇÕES</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Lógica de Busca e Listagem
+    query = "SELECT * FROM fluxo ORDER BY id DESC"
+    df = pd.read_sql_query(query, db_conn)
+    
+    if busca:
+        df = df[df['pdv'].astype(str).str.contains(busca)]
+
+    for _, row in df.iterrows():
+        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 2, 1])
+        
+        c1.write(f"**{row['pdv']}**")
+        c2.write(row['loja'])
+        
+        # Status Colorido
+        cor_status = "#FEF9C3" if row['status'] == 'Pendente' else "#DCFCE7"
+        c3.markdown(f"<span style='background:{cor_status}; padding:3px 10px; border-radius:10px; font-size:12px;'>{row['status']}</span>", unsafe_allow_html=True)
+        
+        c4.write(f"{row['tipo']} | {row['detalhes'][:30]}...")
+        
+        # Botão de Ação (Apenas se Pendente)
+        if row['status'] == 'Pendente':
+            if c5.button("Concluir", key=f"f_{row['id']}", use_container_width=True):
+                db_conn.cursor().execute("UPDATE fluxo SET status='Concluído' WHERE id=?", (row['id'],))
+                db_conn.commit()
+                st.rerun()
+        else:
+            c5.write("✅ Finalizado")
+        
+        st.markdown("<hr style='margin:5px 0; opacity:0.1'>", unsafe_allow_html=True)
+
+# --- 7. DASHBOARD ---
+elif menu == "📊 Dashboard":
+    st.title("Indicadores de Desempenho")
+    df = pd.read_sql_query("SELECT status FROM fluxo", db_conn)
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total de Pedidos", len(df))
+    col2.metric("Pendentes", len(df[df['status']=='Pendente']))
+    col3.metric("Finalizados", len(df[df['status']=='Concluído']))
+    
+    st.bar_chart(df['status'].value_counts())
+
+# --- 8. CONFIGURAÇÕES (GESTÃO DE USUÁRIOS) ---
+elif menu == "⚙️ Configurações":
+    st.title("Configurações do Sistema")
+    if st.session_state["user_perfil"] == "Administrador":
+        with st.form("add_user"):
+            st.subheader("Cadastrar Novo Usuário")
+            new_u = st.text_input("Login")
+            new_p = st.text_input("Senha", type="password")
+            new_n = st.text_input("Nome Completo")
+            new_perf = st.selectbox("Perfil", ["Operador", "Administrador"])
+            if st.form_submit_button("CADASTRAR"):
+                db_conn.cursor().execute("INSERT INTO usuarios VALUES (?,?,?,?)", (new_u, new_p, new_n, new_perf))
+                db_conn.commit()
+                st.success("Usuário criado!")
+    else:
+        st.warning("Apenas administradores podem gerenciar usuários.")
