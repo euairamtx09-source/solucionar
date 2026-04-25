@@ -24,7 +24,7 @@ def init_db():
 conn = init_db()
 
 st.set_page_config(layout="wide", page_title="ExpedFlow")
-st.title("🚀 ExpedFlow: Gestão de Notas")
+st.title("Airam - Gestão de Notas")
 
 # Formulário lateral para entrada manual (enquanto não ligamos o Zap)
 st.sidebar.header("➕ Novo Pedido")
